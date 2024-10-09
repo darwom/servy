@@ -8,7 +8,6 @@ from pandas.plotting import parallel_coordinates
 
 def load_tracks_data():
     """Lädt die Track-Datenbank in einen Pandas DataFrame."""
-    # Pfad zur Datenbankdatei relativ zu diesem Skript
     database_path = os.path.join(os.path.dirname(__file__), 'tracks.db')
     conn = sqlite3.connect(database_path)
     query = "SELECT danceability, energy, tempo, popularity FROM tracks"
@@ -37,6 +36,16 @@ def plot_parallel_coordinates(df):
     plt.show(block=True)
 
 
+def plot_histogram(df, feature):
+    """Erstellt ein Histogramm für ein gegebenes Feature."""
+    plt.figure(figsize=(10, 6))
+    sns.histplot(df[feature], bins=30, kde=True)
+    plt.title(f'Histogram of {feature.capitalize()}')
+    plt.xlabel(feature.capitalize())
+    plt.ylabel('Frequency')
+    plt.show()
+
+
 def plot_training_history(history, log_scale=False):
     """Visualisiert die Trainings- und Validierungsmetriken über die Epochen.
 
@@ -44,7 +53,6 @@ def plot_training_history(history, log_scale=False):
         history: Das Verlauf-Objekt, das beim Keras-Modelltraining zurückgegeben wird.
         log_scale: Boolean, der bestimmt, ob die y-Achse logarithmisch dargestellt werden soll.
     """
-    # Verlauf des Verlustes (Loss)
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
     plt.plot(history.history['loss'], label='Trainingsverlust')
@@ -56,7 +64,6 @@ def plot_training_history(history, log_scale=False):
         plt.yscale('log')
     plt.legend()
 
-    # Verlauf des Mean Absolute Error (MAE)
     plt.subplot(1, 2, 2)
     plt.plot(history.history['mean_absolute_error'], label='Training MAE')
     plt.plot(history.history['val_mean_absolute_error'], label='Validierung MAE')
@@ -81,3 +88,9 @@ def visualize_database():
 
     # Parallel-Koordinaten-Visualisierung
     plot_parallel_coordinates(tracks_df)
+
+    # Histogramme für jede Eigenschaft plotten
+    plot_histogram(tracks_df, 'danceability')
+    plot_histogram(tracks_df, 'energy')
+    plot_histogram(tracks_df, 'tempo')
+    plot_histogram(tracks_df, 'popularity')

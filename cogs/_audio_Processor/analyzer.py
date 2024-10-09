@@ -10,6 +10,33 @@ from tensorflow.keras import layers
 import graphics as gp  # Importiere das graphics Modul
 
 
+def preprocess_data(df):
+    """Vorbereitung der Daten für das neuronale Netzwerk."""
+    features = df[['danceability', 'energy', 'tempo', 'popularity']]
+    labels = df['popularity']
+    features_normalized = (features - features.min()) / (features.max() - features.min())
+    return features_normalized, labels
+
+
+def calculate_statistics(df):
+    """Berechnet statistische Kennzahlen für die Features danceability, energy, tempo und popularity."""
+    stats = {}
+    features = ['danceability', 'energy', 'tempo', 'popularity']
+    for feature in features:
+        stats[feature] = {
+            'mean': df[feature].mean(),
+            'std_dev': df[feature].std(),
+            'variance': df[feature].var(),
+            'range': df[feature].max() - df[feature].min(),
+            'min': df[feature].min(),
+            'max': df[feature].max(),
+            'median': df[feature].median(),
+            'q1': df[feature].quantile(0.25),
+            'q3': df[feature].quantile(0.75)
+        }
+    return stats
+
+
 class DatabaseAnalyzer:
     def __init__(self, database_path):
         self.database_path = database_path
@@ -24,13 +51,6 @@ class DatabaseAnalyzer:
         tracks_df = pd.read_sql(query, conn)
         conn.close()
         return tracks_df
-
-    def preprocess_data(self, df):
-        """Vorbereitung der Daten für das neuronale Netzwerk."""
-        features = df[['danceability', 'energy', 'tempo', 'popularity']]
-        labels = df['popularity']
-        features_normalized = (features - features.min()) / (features.max() - features.min())
-        return features_normalized, labels
 
     def build_model(self, input_shape):
         """Erstellt das neuronale Netzwerkmodell."""
@@ -86,7 +106,12 @@ def main():
     analyzer = DatabaseAnalyzer('tracks.db')
 
     df = analyzer.load_data_from_db()
-    features, labels = analyzer.preprocess_data(df)
+    features, labels = preprocess_data(df)
+
+    # Berechne und zeige die statistischen Kennzahlen
+    stats = calculate_statistics(df)
+    for feature, values in stats.items():
+        print(f"{feature} statistics: {values}")
 
     history = analyzer.train_model(features, labels)
 
@@ -106,7 +131,6 @@ def main():
 
     training_log = analyzer.read_training_log()
     print(training_log)
-    gp.visualize_database()
 
 
 if __name__ == '__main__':

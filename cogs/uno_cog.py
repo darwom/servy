@@ -1,5 +1,5 @@
 from discord.ext import commands
-from _uno.uno import UnoGame
+from _uno.uno import UnoGame as un
 
 
 class UnoCog(commands.Cog):
@@ -14,13 +14,13 @@ class UnoCog(commands.Cog):
             await ctx.send("Es läuft bereits ein Uno-Spiel in diesem Kanal.")
             return
 
-        game = UnoGame(num_players)
+        game = un(num_players)
         self.active_games[ctx.channel.id] = game
         await ctx.send(f"Ein neues Uno-Spiel mit {num_players} Spielern wurde gestartet!")
 
         await self.play_uno_game(ctx, game)
 
-    async def play_uno_game(self, ctx, game: UnoGame):
+    async def play_uno_game(self, ctx, game: un):
         """Der Hauptspiel-Loop für UNO, interagierend über Discord-Nachrichten"""
         game.reset_game()
         await ctx.send(f"Das Uno-Spiel beginnt!")

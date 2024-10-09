@@ -1,9 +1,10 @@
+import asyncio
 import os
 
 from dotenv import load_dotenv
 
-from cogs._audio_Processor.audioProcessor import Sourcer, test_db_connection, test_insert
-from cogs.uno_cog import UnoGame
+import cogs._audio_Processor.audioProcessor as ap
+import cogs._uno.uno as un
 
 
 # Debugging-Skript für das lokale Testen der Funktionalität des Projekts.
@@ -23,7 +24,7 @@ def test_spotify_integration():
         raise ValueError("Spotify client ID und secret müssen in den Umgebungsvariablen gesetzt sein.")
 
     # Instanziiere den Spotify-Datenlader
-    sourcer = Sourcer(client_id, client_secret)
+    sourcer = ap.Sourcer(client_id, client_secret)
 
     # Lade und teste Top-Playlists für eine Genre
     genre = "pop"  # Beispielgenre zum Testen
@@ -36,8 +37,8 @@ def test_spotify_integration():
         print(f"Tracks in der Playlist '{playlist_ids[0]}': {track_ids}")
 
     # Führe Datenbanktests aus
-    test_db_connection()
-    test_insert()
+    ap.test_db_connection()
+    ap.test_insert()
 
 
 def test_uno_game():
@@ -46,7 +47,7 @@ def test_uno_game():
     Diese Funktion simuliert ein Uno-Spiel zwischen zwei Spielern
     und verarbeitet Züge, um die Spielmechanik zu testen.
     """
-    game = UnoGame(num_players=2)
+    game = un.UnoGame(num_players=2)
     game.nn.load_experience('_uno/uno_experience_memory.pkl')
     game.reset_game()
 
@@ -96,8 +97,8 @@ def test_uno_game():
 
 def main():
     """Orchestriert die Tests für UNO-Spielmechanik und Spotify-Interaktionen."""
-    #setup_database()
-    #test_spotify_integration()
+    ap.setup_database()
+    test_spotify_integration()
     #asyncio.run(test_uno_game())
 
 
