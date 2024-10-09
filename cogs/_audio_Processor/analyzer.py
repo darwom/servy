@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -5,11 +6,11 @@ from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from tensorflow.keras import layers
 
-
 class DatabaseAnalyzer:
     def __init__(self, database_path):
         self.database_path = database_path
         self.model = None
+        self.model_save_path = os.path.join(os.path.dirname(__file__), 'neuralNet.keras')
 
     def load_data_from_db(self):
         """Lädt die Track-Datenbank und gibt einen Pandas DataFrame zurück."""
@@ -40,7 +41,7 @@ class DatabaseAnalyzer:
         ])
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    def train_model(self, features, labels, epochs=500, batch_size=32):
+    def train_model(self, features, labels, epochs=1000, batch_size=32):
         """Trainiert das Modell mit den gegebenen Features und Labels."""
         X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
@@ -54,6 +55,10 @@ class DatabaseAnalyzer:
 
         test_loss, test_accuracy = self.model.evaluate(X_test, y_test)
         print(f"Test Accuracy: {test_accuracy:.2f}")
+
+        # Save the model after training
+        self.model.save(self.model_save_path)
+        print(f"Model saved to {self.model_save_path}")
 
     def predict(self, new_data):
         """Macht Vorhersagen mit dem trainierten Modell."""
