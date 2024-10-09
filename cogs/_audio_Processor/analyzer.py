@@ -40,7 +40,7 @@ class DatabaseAnalyzer:
         ])
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    def train_model(self, features, labels, epochs=10, batch_size=32):
+    def train_model(self, features, labels, epochs=500, batch_size=32):
         """Trainiert das Modell mit den gegebenen Features und Labels."""
         X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
