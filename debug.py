@@ -1,45 +1,61 @@
 import asyncio
-from cogs.uno import UnoGame  # Annahme: Diese Klasse ist in deiner uno.py definiert
+import os
+from cogs.uno import UnoGame
+from cogs.audioProcessor import Sourcer, setup_database, test_db_connection, test_insert
+from dotenv import load_dotenv
+
 
 # Debugging-Skript für das lokale Testen der Funktionalität des Projekts.
-# Dieses Skript ermöglicht es, verschiedene Klassen und Funktionen zu testen,
-# ohne dass eine Discord-Integration erforderlich ist.
 
-# In diesem Beispiel wird die Uno-Spielmechanik getestet,
-# Weitere Testfunktionen können hinzugefügt werden, um andere Module zu testen.
-# from deinem_module import DeineKlasse, andere_notwendige_Funktion
+def test_spotify_integration():
+    """Testet die Integration mit der Spotify-API und dem Datenbankmodul."""
 
-async def test_uno_game():
+    # Stelle sicher, dass Umgebungsvariablen geladen werden
+    env_path = os.path.join(os.path.dirname(__file__), 'spotifySecrets.env')
+    if not load_dotenv(dotenv_path=env_path):
+        raise RuntimeError(f"Failed to load .env file from {env_path}")
+
+    client_id = os.getenv('SPOTIFY_CLIENT_ID')
+    client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+    if not client_id or not client_secret:
+        raise ValueError("Spotify client ID und secret müssen in den Umgebungsvariablen gesetzt sein.")
+
+    # Instanziiere den Spotify-Datenlader
+    sourcer = Sourcer(client_id, client_secret)
+
+    # Lade und teste Top-Playlists für eine Genre
+    genre = "pop"  # Beispielgenre zum Testen
+    playlist_ids = sourcer.get_top_playlists_by_genre(genre)
+    print(f"Gefundene Playlists für Genre '{genre}': {playlist_ids}")
+
+    if playlist_ids:
+        # Teste den Abruf von Tracks aus der ersten Playlist
+        track_ids = sourcer.get_playlist_tracks(playlist_ids[0])
+        print(f"Tracks in der Playlist '{playlist_ids[0]}': {track_ids}")
+
+    # Führe Datenbanktests aus
+    test_db_connection()
+    test_insert()
+
+
+def test_uno_game():
     """Testet die Funktionalität des Uno-Spiels lokal.
 
     Diese Funktion simuliert ein Uno-Spiel zwischen zwei Spielern
     und verarbeitet Züge, um die Spielmechanik zu testen.
     """
-    # Erstelle eine Instanz des Uno-Spiels für zwei Spieler.
     game = UnoGame(num_players=2)
-
-    # Laden von gespeicherten Erfahrungen, falls vorhanden.
-    try:
-        game.nn.load_experience('uno_experience_memory.pkl')
-        print("Gespeicherte Erfahrungen wurden erfolgreich geladen.")
-    except FileNotFoundError:
-        print("Keine gespeicherten Erfahrungen gefunden. Ein neuer Speicher wird angelegt.")
-
-    # Initialisiere das Spiel, indem du die Karten mischtest und die Ausgangshände verteilst.
+    game.nn.load_experience('experience_memory.pkl')
     game.reset_game()
 
-    # Eine Schleife, die die Aktionen jedes Spielers der Reihe nach behandelt, bis das Spiel gewonnen wird.
     while True:
-        # Bestimme, welcher Spieler im aktuellen Zug agiert.
         current_player = game.current_player
-
-        # Prozess für den menschlichen Spieler (hier Spieler 0).
         if current_player == 0:
             print(f"Spieler {current_player} ist am Zug")
             print(f"Oberste Karte: {game.discard_pile[-1]}")
             print(f"Hand: {game.players[current_player]}")
 
-            # Zeige die gültigen Züge an, die der Spieler machen kann.
             valid_actions = game.get_valid_actions()
             if valid_actions:
                 print("Wähle eine Karte zu spielen oder 'ziehen' um zu ziehen:")
@@ -47,7 +63,6 @@ async def test_uno_game():
                     print(f"{i + 1}: {action}")
                 print("0: Ziehen")
 
-                # Erfrage die Eingabe des Spielers für deren nächsten Zug.
                 user_input = input("Gib eine Nummer oder 'ziehen' ein: ")
                 if user_input.lower().strip() == 'ziehen':
                     action = None
@@ -58,32 +73,32 @@ async def test_uno_game():
                         print("Ungültige Eingabe. Ziehe eine Karte.")
                         action = None
             else:
-                # Wenn keine gültigen Züge vorhanden sind, muss der Spieler eine Karte ziehen.
                 print("Keine spielbaren Karten. Ziehe eine Karte.")
                 action = None
 
-        # KI-Logik für den Computergegner.
         else:
-            # Entscheide die Aktion der KI basierend auf dem aktuellen Zustand.
             state = game.encode_state()
             valid_actions = game.get_valid_actions()
             action = game.nn.act(state, valid_actions)
 
-        # Führe die gewählte Aktion aus und aktualisiere den Spielstatus.
         _, _, reward, _, done = game.step(action)
         print(f"Aktion: {'Zieht Karte' if action is None else action}")
         print(f"Belohnung: {reward}")
 
-        # Überprüfen, ob ein Spieler gewonnen hat und beende das Spiel bei Bedarf.
         winner = game.check_winner()
         if winner is not None:
             print(f"Spieler {winner} gewinnt!")
             break
 
-    # Speichere die gesammelten Erfahrungen nach Spielende.
-    game.nn.save_experience('uno_experience_memory.pkl')
-    print("Gesammelte Erfahrungen wurden gespeichert.")
+    game.nn.save_experience('experience_memory.pkl')
+
+
+def main():
+    """Orchestriert die Tests für UNO-Spielmechanik und Spotify-Interaktionen."""
+    setup_database()
+    test_spotify_integration()
+    #asyncio.run(test_uno_game())
+
 
 if __name__ == "__main__":
-    # Starte das Testen der Funktionen asynchron, um asynchronen Code zu behandeln.
-    asyncio.run(test_uno_game())
+    main()

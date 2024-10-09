@@ -1,6 +1,5 @@
-import discord
 from discord.ext import commands
-from uno import UnoGame  # Importiere die Uno-Spielklasse aus deiner uno.py
+from cogs.uno.uno import UnoGame  # Importiere die Uno-Spielklasse aus deiner uno.py
 
 
 class UnoCog(commands.Cog):
