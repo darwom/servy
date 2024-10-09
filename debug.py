@@ -1,7 +1,6 @@
 import asyncio
 from cogs.uno import UnoGame  # Annahme: Diese Klasse ist in deiner uno.py definiert
 
-
 # Debugging-Skript für das lokale Testen der Funktionalität des Projekts.
 # Dieses Skript ermöglicht es, verschiedene Klassen und Funktionen zu testen,
 # ohne dass eine Discord-Integration erforderlich ist.
@@ -18,6 +17,13 @@ async def test_uno_game():
     """
     # Erstelle eine Instanz des Uno-Spiels für zwei Spieler.
     game = UnoGame(num_players=2)
+
+    # Laden von gespeicherten Erfahrungen, falls vorhanden.
+    try:
+        game.nn.load_experience('uno_experience_memory.pkl')
+        print("Gespeicherte Erfahrungen wurden erfolgreich geladen.")
+    except FileNotFoundError:
+        print("Keine gespeicherten Erfahrungen gefunden. Ein neuer Speicher wird angelegt.")
 
     # Initialisiere das Spiel, indem du die Karten mischtest und die Ausgangshände verteilst.
     game.reset_game()
@@ -74,6 +80,9 @@ async def test_uno_game():
             print(f"Spieler {winner} gewinnt!")
             break
 
+    # Speichere die gesammelten Erfahrungen nach Spielende.
+    game.nn.save_experience('uno_experience_memory.pkl')
+    print("Gesammelte Erfahrungen wurden gespeichert.")
 
 if __name__ == "__main__":
     # Starte das Testen der Funktionen asynchron, um asynchronen Code zu behandeln.

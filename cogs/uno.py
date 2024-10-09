@@ -256,13 +256,13 @@ class NeuralNet:
         self.model.save(filename)
         print(f"Model saved to {filename}")
 
-    def save_experience(self, filename='experience_memory.pkl'):
+    def save_experience(self, filename='uno_experience_memory.pkl'):
         """ Speichert den Replay-Memory in einer Datei. """
         with open(filename, 'wb') as f:
             pickle.dump(self.memory, f)
         print(f"Experience memory saved to {filename}")
 
-    def load_experience(self, filename='experience_memory.pkl'):
+    def load_experience(self, filename='uno_experience_memory.pkl'):
         """ Lädt den Replay-Memory von einer Datei. """
         try:
             with open(filename, 'rb') as f:
@@ -569,7 +569,7 @@ if __name__ == "__main__":
     game = UnoGame(num_players=2)
 
     # Laden der gespeicherten Erfahrungen, falls vorhanden
-    game.nn.load_experience('experience_memory.pkl')
+    game.nn.load_experience('uno_experience_memory.pkl')
 
     # Extract cards before starting the game
     #game.extract_cards_from_image('uno_set.png')
@@ -581,4 +581,4 @@ if __name__ == "__main__":
     game.play_uno_cmd()
 
     # Nach dem Spiel die Erfahrungen speichern
-    game.nn.save_experience('experience_memory.pkl')
+    game.nn.save_experience('uno_experience_memory.pkl')
