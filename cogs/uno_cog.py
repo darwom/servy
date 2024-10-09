@@ -1,5 +1,5 @@
 from discord.ext import commands
-from cogs.uno.uno import UnoGame  # Importiere die Uno-Spielklasse aus deiner uno.py
+from cogs._uno.uno import UnoGame  # Importiere die Uno-Spielklasse aus deiner _uno.py
 
 
 class UnoCog(commands.Cog):
@@ -7,7 +7,7 @@ class UnoCog(commands.Cog):
         self.bot = bot
         self.active_games = {}  # Dictionary, um laufende Spiele zu speichern
 
-    @commands.command(name="uno")
+    @commands.command(name="_uno")
     async def start_uno_game(self, ctx, num_players: int = 2):
         """Startet ein neues Uno-Spiel im aktuellen Kanal"""
         if ctx.channel.id in self.active_games:

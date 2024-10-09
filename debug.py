@@ -1,6 +1,6 @@
 import asyncio
 import os
-from cogs.uno import UnoGame
+from cogs._uno import UnoGame
 from cogs.audioProcessor import Sourcer, setup_database, test_db_connection, test_insert
 from dotenv import load_dotenv
 
