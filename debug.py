@@ -1,8 +1,9 @@
-import asyncio
 import os
-from cogs._uno import UnoGame
-from cogs.audioProcessor import Sourcer, setup_database, test_db_connection, test_insert
+
 from dotenv import load_dotenv
+
+from cogs._audio_Processor.audioProcessor import Sourcer, test_db_connection, test_insert
+from cogs.uno_cog import UnoGame
 
 
 # Debugging-Skript für das lokale Testen der Funktionalität des Projekts.
@@ -11,7 +12,7 @@ def test_spotify_integration():
     """Testet die Integration mit der Spotify-API und dem Datenbankmodul."""
 
     # Stelle sicher, dass Umgebungsvariablen geladen werden
-    env_path = os.path.join(os.path.dirname(__file__), 'spotifySecrets.env')
+    env_path = os.path.join(os.path.dirname(__file__), 'cogs/_audio_Processor/spotifySecrets.env')
     if not load_dotenv(dotenv_path=env_path):
         raise RuntimeError(f"Failed to load .env file from {env_path}")
 
@@ -46,7 +47,7 @@ def test_uno_game():
     und verarbeitet Züge, um die Spielmechanik zu testen.
     """
     game = UnoGame(num_players=2)
-    game.nn.load_experience('experience_memory.pkl')
+    game.nn.load_experience('_uno/uno_experience_memory.pkl')
     game.reset_game()
 
     while True:
@@ -90,13 +91,13 @@ def test_uno_game():
             print(f"Spieler {winner} gewinnt!")
             break
 
-    game.nn.save_experience('experience_memory.pkl')
+    game.nn.save_experience('_uno/uno_experience_memory.pkl')
 
 
 def main():
     """Orchestriert die Tests für UNO-Spielmechanik und Spotify-Interaktionen."""
-    setup_database()
-    test_spotify_integration()
+    #setup_database()
+    #test_spotify_integration()
     #asyncio.run(test_uno_game())
 
 

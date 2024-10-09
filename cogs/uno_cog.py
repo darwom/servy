@@ -1,5 +1,5 @@
 from discord.ext import commands
-from cogs._uno.uno import UnoGame  # Importiere die Uno-Spielklasse aus deiner _uno.py
+from _uno.uno import UnoGame
 
 
 class UnoCog(commands.Cog):
@@ -50,7 +50,7 @@ class UnoCog(commands.Cog):
                     await self.handle_turn(ctx, game, action)
                 except Exception as e:
                     await ctx.send(f"Fehler oder Zeitüberschreitung: {str(e)}")
-                    self.handle_turn(ctx, game, None)
+                    await self.handle_turn(ctx, game, None)
 
             else:
                 await ctx.send(f"KI-Spieler {current_player} ist am Zug.")

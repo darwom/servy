@@ -2,15 +2,20 @@ import os
 import sqlite3
 import pandas as pd
 import numpy as np
+import json
+import multiprocessing
 from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from tensorflow.keras import layers
+import graphics as gp  # Importiere das graphics Modul
+
 
 class DatabaseAnalyzer:
     def __init__(self, database_path):
         self.database_path = database_path
         self.model = None
         self.model_save_path = os.path.join(os.path.dirname(__file__), 'neuralNet.keras')
+        self.log_save_path = os.path.join(os.path.dirname(__file__), 'training_log.json')
 
     def load_data_from_db(self):
         """Lädt die Track-Datenbank und gibt einen Pandas DataFrame zurück."""
@@ -22,12 +27,8 @@ class DatabaseAnalyzer:
 
     def preprocess_data(self, df):
         """Vorbereitung der Daten für das neuronale Netzwerk."""
-        # Wähle die relevanten Features aus
         features = df[['danceability', 'energy', 'tempo', 'popularity']]
-        labels = df['popularity'] > 50  # Beispiel: Als beliebt markieren, wenn die Popularität über 50 ist
-        labels = labels.astype(int)  # Umwandlung von boolean nach int
-
-        # Normalisiere die Features
+        labels = df['popularity']
         features_normalized = (features - features.min()) / (features.max() - features.min())
         return features_normalized, labels
 
@@ -37,9 +38,9 @@ class DatabaseAnalyzer:
             layers.InputLayer(input_shape=input_shape),
             layers.Dense(16, activation='relu'),
             layers.Dense(8, activation='relu'),
-            layers.Dense(1, activation='sigmoid')
+            layers.Dense(1)
         ])
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        self.model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_absolute_error'])
 
     def train_model(self, features, labels, epochs=1000, batch_size=32):
         """Trainiert das Modell mit den gegebenen Features und Labels."""
@@ -47,18 +48,32 @@ class DatabaseAnalyzer:
 
         if self.model is None:
             self.build_model(input_shape=X_train.shape[1:])
-        else:
-            print("Model already built, proceeding to training.")
 
         self.model.summary()
-        self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
+        history = self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
 
-        test_loss, test_accuracy = self.model.evaluate(X_test, y_test)
-        print(f"Test Accuracy: {test_accuracy:.2f}")
+        test_loss, test_mae = self.model.evaluate(X_test, y_test)
+        print(f"Test Mean Absolute Error: {test_mae:.2f}")
 
-        # Save the model after training
         self.model.save(self.model_save_path)
         print(f"Model saved to {self.model_save_path}")
+
+        self.save_training_log(history)
+        return history
+
+    def save_training_log(self, history):
+        """Speichert den Trainingsverlauf in einer JSON-Datei."""
+        log_data = history.history
+        with open(self.log_save_path, 'w') as f:
+            json.dump(log_data, f)
+        print(f"Training log saved to {self.log_save_path}")
+
+    def read_training_log(self):
+        """Liest den Trainingsverlauf aus einer JSON-Datei."""
+        with open(self.log_save_path, 'r') as f:
+            log_data = json.load(f)
+        print(f"Training log loaded from {self.log_save_path}")
+        return log_data
 
     def predict(self, new_data):
         """Macht Vorhersagen mit dem trainierten Modell."""
@@ -68,21 +83,30 @@ class DatabaseAnalyzer:
 
 
 def main():
-    # Instantiate the analyzer with the path to your database
     analyzer = DatabaseAnalyzer('tracks.db')
 
-    # Load and preprocess data
     df = analyzer.load_data_from_db()
     features, labels = analyzer.preprocess_data(df)
 
-    # Train the model
-    analyzer.train_model(features, labels)
+    history = analyzer.train_model(features, labels)
 
-    # Example of making a prediction
-    # Assume we have a new track with preprocessed features
-    new_track_features = np.array([[0.5, 0.6, 0.7, 0.6]])  # Replace with real data
+    # Verwende Multiprocessing, um die Plots parallel zu öffnen
+    process1 = multiprocessing.Process(target=gp.plot_training_history, args=(history, True))
+    process2 = multiprocessing.Process(target=gp.visualize_database)
+
+    process1.start()
+    process2.start()
+
+    process1.join()
+    process2.join()
+
+    new_track_features = np.array([[0.5, 0.6, 0.7, 0.6]])
     prediction = analyzer.predict(new_track_features)
-    print(f"Prediction for new track: {prediction}")
+    print(f"Projection for new track popularity: {prediction}")
+
+    training_log = analyzer.read_training_log()
+    print(training_log)
+    gp.visualize_database()
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # Load environment variables
 # Set the path to the .env file relative to the current script location
-env_path = os.path.join(os.path.dirname(__file__), '_audio_Processor/spotifySecrets.env')
+env_path = os.path.join(os.path.dirname(__file__), 'spotifySecrets.env')
 if not load_dotenv(dotenv_path=env_path):
     logging.error(f"Failed to load .env file from {env_path}")
 
@@ -26,7 +26,7 @@ else:
     logging.info("Spotify client ID und secret erfolgreich geladen.")
 
 # Define database
-DATABASE_DIR = os.path.join(os.path.dirname(__file__), '_audio_Processor')
+DATABASE_DIR = os.path.join(os.path.dirname(__file__), '')
 DATABASE = os.path.join(DATABASE_DIR, 'tracks.db')
 
 # Create directory if it doesn't exist
