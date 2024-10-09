@@ -422,8 +422,8 @@ def test_insert():
         track_data = (
             "1", "Test Track", "Test Artist", "Test Album", "2022-01-01", "spotify:track:1", 200000, 50, 0.8, 0.7,
             120.0)
-        cursor.execute('''INSERT OR REPLACE INTO tracks (id, name, artist, album, release_date, uri, duration, popularity, danceability, energy, tempo)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', track_data)
+        cursor.execute('''INSERT OR REPLACE INTO tracks (id, name, artist, album, release_date, uri, duration, 
+        popularity, danceability, energy, tempo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', track_data)
         conn.commit()
 
         cursor.execute("SELECT * FROM tracks WHERE id = ?", ("1",))

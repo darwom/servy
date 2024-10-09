@@ -42,7 +42,7 @@ class DatabaseAnalyzer:
         self.database_path = database_path
         self.model = None
         self.model_save_path = os.path.join(os.path.dirname(__file__), 'neuralNet.keras')
-        self.log_save_path = os.path.join(os.path.dirname(__file__), 'training_log.json')
+        self.log_save_path = os.path.join(os.path.dirname(__file__), 'analysis/training_log.json')
 
     def load_data_from_db(self):
         """Lädt die Track-Datenbank und gibt einen Pandas DataFrame zurück."""
