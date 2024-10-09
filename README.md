@@ -49,6 +49,7 @@ Feel free to mess with **Servy**! Add your own commands, create bugs, make it pl
    ```
    DISCORD_TOKEN=your_discord_token_here
    RCON_PASSWORD=your_rcon_password_here
+   LOG_FILE_PATH=minecraft_latest.log_path_here
    ```
 
 4. Start the bot like a professional:
