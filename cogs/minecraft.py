@@ -8,6 +8,8 @@ import asyncio
 class Minecraft(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        if config.LOG_FILE_PATH == '':
+            return
         self.watch_log.start()  # Start the log watching loop
 
     # Generator function to tail a file

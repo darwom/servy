@@ -12,8 +12,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Load extensions
 async def load_extensions():
-    for extension in ["cogs.minecraft", "cogs.music", "cogs.uno_cog"]:
-        await bot.load_extension(extension)
+    for extension in ["minecraft", "music"]:
+        await bot.load_extension(f"cogs.{extension}")
 
 
 # Event: Bot is ready
