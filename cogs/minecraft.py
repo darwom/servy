@@ -8,7 +8,7 @@ import asyncio
 class Minecraft(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        if config.LOG_FILE_PATH == '':
+        if config.LOG_FILE_PATH == "":
             return
         self.watch_log.start()  # Start the log watching loop
 
@@ -28,7 +28,7 @@ class Minecraft(commands.Cog):
         try:
             with open(config.LOG_FILE_PATH, "r") as file:
                 log_lines = self.tail_logfile(file)
-                channel = self.bot.get_channel(config.CHANNEL_ID)
+                channel = self.bot.get_channel(config.CONSOLE_CHANNEL_ID)
                 line = file.readline()
                 async for line in log_lines:
                     await channel.send(line.strip())
@@ -43,7 +43,7 @@ class Minecraft(commands.Cog):
             return
 
         # Check if the message is in the specified channel
-        if message.channel.id == config.CHANNEL_ID:
+        if message.channel.id == config.CONSOLE_CHANNEL_ID:
             try:
                 # Send the message content as an RCON command to the Minecraft server
                 with MCRcon(
