@@ -6,7 +6,6 @@ load_dotenv()
 
 # Secrets from the .env file
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-RCON_IP = os.getenv("RCON_IP")
 RCON_PASSWORD = os.getenv("RCON_PASSWORD")
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH")
 

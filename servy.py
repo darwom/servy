@@ -2,6 +2,7 @@ import discord
 import config
 from discord.ext import commands
 import asyncio
+import os
 
 
 # Discord bot setup with intents
@@ -10,10 +11,12 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# Load extensions
+# Automatically load all cogs from the 'cogs' directory
 async def load_extensions():
-    for extension in ["minecraft", "music"]:
-        await bot.load_extension(f"cogs.{extension}")
+    for filename in os.listdir("./cogs"):
+        if filename.endswith(".py"):
+            # Remove the '.py' extension and load the cog
+            await bot.load_extension(f"cogs.{filename[:-3]}")
 
 
 # Event: Bot is ready
