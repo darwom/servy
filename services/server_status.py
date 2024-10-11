@@ -1,59 +1,65 @@
 import discord
-from discord.ext import tasks
 from mcrcon import MCRcon
 import config
+import asyncio
 
 
 class ServerStatusService:
     def __init__(self, bot):
         self.bot = bot
-        self.update_server_status.start()  # Start the fallback task
+        self.last_status = None  # Variable zum Speichern des letzten Status
+        self.lock = asyncio.Lock()  # Lock to prevent concurrent updates
 
-    # Function to get the server status
-    def get_server_status(self):
+    # Funktion zum Abrufen des Serverstatus
+    async def get_server_status(self):
         try:
-            with MCRcon(
-                config.RCON_IP, config.RCON_PASSWORD, port=config.RCON_PORT
-            ) as mcr:
-                response = mcr.command("list")
-                if "There are 0" in response:
-                    return "Online, no players"
-                elif "There are" in response:
-                    num_players = response.split()[2]  # Extract player count
-                    return f"Online, {num_players} players"
-                else:
-                    return "Online"
+
+            def rcon_command():
+                with MCRcon(
+                    config.RCON_IP, config.RCON_PASSWORD, port=config.RCON_PORT
+                ) as mcr:
+                    response = mcr.command("list")
+                    return response
+
+            response = await asyncio.get_event_loop().run_in_executor(
+                None, rcon_command
+            )
+
+            if "There are 0" in response:
+                return "Online, no players"
+            elif "There are" in response:
+                num_players = response.split()[2]  # Spieleranzahl extrahieren
+                return f"Online, {num_players} players"
+            else:
+                return "Online"
         except Exception:
             return "Offline"
 
-    # Task to update the bot's presence based on the server status
+    # Methode zum Aktualisieren der Bot-Präsenz basierend auf dem Serverstatus
     async def update_presence(self):
-        status = self.get_server_status()
-        print(f"Updating server status: {status}")
+        async with self.lock:
+            status = await self.get_server_status()
 
-        if "Offline" in status:
-            activity = discord.Activity(
-                type=discord.ActivityType.watching, name="Server offline"
-            )
-        elif "no players" in status:
-            activity = discord.Activity(
-                type=discord.ActivityType.playing, name="Online"
-            )
-        else:
-            activity = discord.Activity(type=discord.ActivityType.playing, name=status)
+            if status != self.last_status:
+                self.last_status = status  # Letzten bekannten Status aktualisieren
 
-        await self.bot.change_presence(status=discord.Status.online, activity=activity)
+                if "Offline" in status:
+                    activity = discord.Activity(
+                        type=discord.ActivityType.watching, name="Server offline"
+                    )
+                elif "no players" in status:
+                    activity = discord.Activity(
+                        type=discord.ActivityType.playing, name="Online"
+                    )
+                else:
+                    activity = discord.Activity(
+                        type=discord.ActivityType.playing, name=status
+                    )
 
-    # Task to update the bot's presence periodically (fallback)
-    @tasks.loop(minutes=5)
-    async def update_server_status(self):
-        await self.update_presence()
+                await self.bot.change_presence(
+                    status=discord.Status.online, activity=activity
+                )
 
-    @update_server_status.before_loop
-    async def before_update_server_status(self):
-        await self.bot.wait_until_ready()
-
-    # Method to be called when a log change is detected by MinecraftLogWatcher
+    # Methode, die aufgerufen wird, wenn eine Log-Änderung vom MinecraftLogWatcher erkannt wird
     async def on_log_change(self):
-        print("Log change detected, updating server status.")
         await self.update_presence()
