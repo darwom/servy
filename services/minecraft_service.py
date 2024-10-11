@@ -94,7 +94,7 @@ class MinecraftLogWatcher:
 
             # Directly send small sets of messages
             if 0 < len(new_lines) <= 5:
-                await self.flush_buffer(immediate=True)
+                await self.flush_buffer()
 
             # Start debounce only if there are new relevant lines and not during initial load
             if new_lines and not self.initial_load:
@@ -130,7 +130,7 @@ class MinecraftLogWatcher:
             self.debounce_task = None  # Reset the debounce task
 
     @tasks.loop(seconds=5)  # Optimized frequency for buffer flushing
-    async def flush_buffer(self, immediate=False):
+    async def flush_buffer(self):
         # Processes the buffer either immediately or on a schedule
         if self.buffer:
             try:

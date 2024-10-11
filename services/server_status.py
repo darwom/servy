@@ -7,10 +7,10 @@ import asyncio
 class ServerStatusService:
     def __init__(self, bot):
         self.bot = bot
-        self.last_status = None  # Variable zum Speichern des letzten Status
+        self.last_status = None  # Variable to store the last known server status
         self.lock = asyncio.Lock()  # Lock to prevent concurrent updates
 
-    # Funktion zum Abrufen des Serverstatus
+    # Function to retrieve the server status
     async def get_server_status(self):
         try:
 
@@ -28,20 +28,20 @@ class ServerStatusService:
             if "There are 0" in response:
                 return "Online, no players"
             elif "There are" in response:
-                num_players = response.split()[2]  # Spieleranzahl extrahieren
+                num_players = response.split()[2]  # Extract the number of players
                 return f"Online, {num_players} players"
             else:
                 return "Online"
         except Exception:
             return "Offline"
 
-    # Methode zum Aktualisieren der Bot-Präsenz basierend auf dem Serverstatus
+    # Method to update the bot's presence based on the server status
     async def update_presence(self):
         async with self.lock:
             status = await self.get_server_status()
 
             if status != self.last_status:
-                self.last_status = status  # Letzten bekannten Status aktualisieren
+                self.last_status = status  # Update the last known status
 
                 if "Offline" in status:
                     activity = discord.Activity(
@@ -60,6 +60,6 @@ class ServerStatusService:
                     status=discord.Status.online, activity=activity
                 )
 
-    # Methode, die aufgerufen wird, wenn eine Log-Änderung vom MinecraftLogWatcher erkannt wird
+    # Method called when a log change is detected by the MinecraftLogWatcher
     async def on_log_change(self):
         await self.update_presence()
