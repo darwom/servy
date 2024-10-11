@@ -4,6 +4,7 @@ from discord.ext import commands
 import asyncio
 import os
 import importlib
+import inspect
 
 # Discord bot setup with intents
 intents = discord.Intents.default()
@@ -11,30 +12,44 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# Automatically load all command modules from the 'commands' directory
-async def load_extensions():
-    for filename in os.listdir("./commands"):
+# Generic function to load classes based on directory and parameters in __init__
+async def load_modules(directory, bot):
+    for filename in os.listdir(directory):
         if filename.endswith(".py"):
-            await bot.load_extension(f"commands.{filename[:-3]}")
+            module_name = filename[:-3]
+            module = importlib.import_module(f"{directory}.{module_name}")
 
-
-# Automatically load and initialize all service modules from the 'services' directory
-async def load_services():
-    for filename in os.listdir("./services"):
-        if filename.endswith(".py"):
-            service_name = filename[:-3]
-            module = importlib.import_module(f"services.{service_name}")
-
-            # Initialize the service class, but ignore non-user-defined classes like MCRcon
+            # Iterate through the objects in the module to find classes
             for obj_name in dir(module):
                 obj = getattr(module, obj_name)
-                # Only instantiate if it's a class and is defined in this module (not imported)
+
+                # Only check classes and ensure they are defined in this module
                 if isinstance(obj, type) and obj.__module__ == module.__name__:
                     try:
-                        instance = obj(bot)  # Initialize the class
-                        print(f"Initialized service {obj_name}.")
+                        # Inspect the signature of the __init__ method
+                        init_signature = inspect.signature(obj.__init__)
+                        params = list(init_signature.parameters.values())
+
+                        # Check if the __init__ method has exactly two parameters: 'self' and 'bot'
+                        if (
+                            len(params) == 2
+                            and params[0].name == "self"
+                            and params[1].name == "bot"
+                        ):
+                            # For commands, use bot.load_extension
+                            if directory == "commands":
+                                await bot.load_extension(f"{directory}.{module_name}")
+                                print(f"Loaded command extension {module_name}.")
+                            # For services, instantiate the class
+                            elif directory == "services":
+                                instance = obj(bot)
+                                print(f"Initialized service {obj_name}.")
+                        else:
+                            print(
+                                f"Skipping {obj_name}: __init__ method has unexpected parameters."
+                            )
                     except Exception as e:
-                        print(f"Error initializing service {obj_name}: {e}")
+                        print(f"Error loading {obj_name}: {e}")
 
 
 # Event: Bot is ready
@@ -53,8 +68,8 @@ async def on_ready():
 # Start the bot
 async def main():
     async with bot:
-        await load_extensions()
-        await load_services()  # Load and initialize services
+        await load_modules("commands", bot)
+        await load_modules("services", bot)
         await bot.start(config.DISCORD_TOKEN)
 
 
