@@ -42,6 +42,13 @@ async def load_services():
 async def on_ready():
     print(f"Bot is logged in as {bot.user}")
 
+    # Sync global commands
+    try:
+        synced = await bot.tree.sync()  # Sync globally
+        print(f"Synced {len(synced)} commands globally.")
+    except Exception as e:
+        print(f"Error syncing commands: {e}")
+
 
 # Start the bot
 async def main():
