@@ -10,6 +10,8 @@ class ServerStatusService:
         self.last_status = None  # Variable to store the last known server status
         self.lock = asyncio.Lock()  # Lock to prevent concurrent updates
 
+        asyncio.create_task(self.update_presence())  # Check status on startup
+
     # Function to retrieve the server status
     async def get_server_status(self):
         try:
