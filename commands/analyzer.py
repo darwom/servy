@@ -14,9 +14,7 @@ class MessageAnalyzer(commands.Cog):
     )
     async def analyze(self, interaction: discord.Interaction):
         # Slash command to count and analyze messages sent by users
-        await interaction.response.defer(
-            thinking=True
-        )  # Defer the response to avoid timeout
+        await interaction.response.defer(thinking=True)  # Defer the response
 
         user_message_count = {}
 
@@ -27,6 +25,11 @@ class MessageAnalyzer(commands.Cog):
 
         # Iterate through the channel history and count messages
         async for message in interaction.channel.history(limit=1000000):
+            # Skip the bot's own progress message
+            if message.id == progress_message.id:
+                continue
+
+            # Count messages for each user
             if message.author in user_message_count:
                 user_message_count[message.author] += 1
             else:
