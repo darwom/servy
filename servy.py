@@ -13,43 +13,44 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 # Generic function to load classes based on directory and parameters in __init__
-async def load_modules(directory, bot):
+async def load_modules(directory):
     for filename in os.listdir(directory):
-        if filename.endswith(".py"):
-            module_name = filename[:-3]
-            module = importlib.import_module(f"{directory}.{module_name}")
+        if not filename.endswith(".py"):
+            continue
 
-            # Iterate through the objects in the module to find classes
-            for obj_name in dir(module):
-                obj = getattr(module, obj_name)
+        module_name = filename[:-3]
+        module = importlib.import_module(f"{directory}.{module_name}")
 
-                # Only check classes and ensure they are defined in this module
-                if isinstance(obj, type) and obj.__module__ == module.__name__:
-                    try:
-                        # Inspect the signature of the __init__ method
-                        init_signature = inspect.signature(obj.__init__)
-                        params = list(init_signature.parameters.values())
+        for obj_name in dir(module):
+            obj = getattr(module, obj_name)
 
-                        # Check if the __init__ method has exactly two parameters: 'self' and 'bot'
-                        if (
-                            len(params) == 2
-                            and params[0].name == "self"
-                            and params[1].name == "bot"
-                        ):
-                            # For commands, use bot.load_extension
-                            if directory == "commands":
-                                await bot.load_extension(f"{directory}.{module_name}")
-                                print(f"Loaded command extension {module_name}.")
-                            # For services, instantiate the class
-                            elif directory == "services":
-                                instance = obj(bot)
-                                print(f"Initialized service {obj_name}.")
-                        else:
-                            print(
-                                f"Skipping {obj_name}: __init__ method has unexpected parameters."
-                            )
-                    except Exception as e:
-                        print(f"Error loading {obj_name}: {e}")
+            if not is_valid_class(obj, module):
+                continue
+
+            if not has_valid_init(obj):
+                print(f"Skipping {obj_name}: __init__ method has unexpected parameters.")
+                continue
+
+            if directory == "commands":
+                await bot.load_extension(f"{directory}.{module_name}")
+                print(f"Loaded command {module_name}.")
+            elif directory == "services":
+                obj(bot)
+                print(f"Initialized service {obj_name}.")
+
+
+def is_valid_class(obj, module):
+    return isinstance(obj, type) and obj.__module__ == module.__name__
+
+
+def has_valid_init(obj):
+    try:
+        init_signature = inspect.signature(obj.__init__)
+        params = list(init_signature.parameters.values())
+        return len(params) == 2 and params[0].name == "self" and params[1].name == "bot"
+    except Exception as e:
+        print(f"Error inspecting __init__ method of {obj}: {e}")
+        return False
 
 
 # Event: Bot is ready
@@ -68,8 +69,8 @@ async def on_ready():
 # Start the bot
 async def main():
     async with bot:
-        await load_modules("commands", bot)
-        await load_modules("services", bot)
+        await load_modules("commands")
+        await load_modules("services")
         await bot.start(config.DISCORD_TOKEN)
 
 
