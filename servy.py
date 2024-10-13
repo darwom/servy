@@ -12,7 +12,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# Generic function to load classes based on directory and parameters in __init__
+# Generic function to load classes based on directory and __init__ parameters
 async def load_modules(directory):
     for filename in os.listdir(directory):
         if not filename.endswith(".py"):
@@ -28,21 +28,23 @@ async def load_modules(directory):
                 continue
 
             if not has_valid_init(obj):
-                print(f"Skipping {obj_name}: __init__ method has unexpected parameters.")
+                print(f"Skipping {obj_name}: invalid __init__ parameters")
                 continue
 
             if directory == "commands":
                 await bot.load_extension(f"{directory}.{module_name}")
-                print(f"Loaded command {module_name}.")
+                print(f"Loaded command {module_name}")
             elif directory == "services":
-                obj(bot)
-                print(f"Initialized service {obj_name}.")
+                obj(bot)  # Initialize service
+                print(f"Initialized service {obj_name}")
 
 
+# Check if the object is a valid class and belongs to the correct module
 def is_valid_class(obj, module):
     return isinstance(obj, type) and obj.__module__ == module.__name__
 
 
+# Validate if the class __init__ method has only 'self' and 'bot' parameters
 def has_valid_init(obj):
     try:
         init_signature = inspect.signature(obj.__init__)
@@ -56,12 +58,12 @@ def has_valid_init(obj):
 # Event: Bot is ready
 @bot.event
 async def on_ready():
-    print(f"Bot is logged in as {bot.user}")
+    print(f"Bot logged in as {bot.user}")
 
     # Sync global commands
     try:
         synced = await bot.tree.sync()  # Sync globally
-        print(f"Synced {len(synced)} commands globally.")
+        print(f"Synced {len(synced)} commands globally")
     except Exception as e:
         print(f"Error syncing commands: {e}")
 
