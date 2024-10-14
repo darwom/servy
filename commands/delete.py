@@ -1,7 +1,9 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import timezone, timedelta
+from datetime import timezone
+import pytz
+import config
 
 
 class DeleteMessages(commands.Cog):
@@ -61,11 +63,12 @@ class DeleteMessages(commands.Cog):
         await self.prompt_delete(interaction, found_message, count)
 
     async def prompt_delete(self, interaction, found_message, count=None):
-        # Format the found message
+        local_tz = pytz.timezone(config.TIMEZONE)
+
+        # Convert the message creation time from UTC to the local timezone
         utc_time = found_message.created_at.replace(tzinfo=timezone.utc)
-        local_time = utc_time.astimezone(
-            timezone(timedelta(hours=2))
-        )  # UTC+2 for Europe/Berlin (adjust for daylight saving if needed)
+        local_time = utc_time.astimezone(local_tz)
+
         message_time = local_time.strftime("%d.%m.%Y at %H:%M")
         message_author = found_message.author.display_name
 
