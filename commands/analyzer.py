@@ -1,65 +1,266 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.app_commands import Choice
+import matplotlib.pyplot as plt
+import io
+import pytz
+import config
+from collections import defaultdict, Counter
 
 
 class MessageAnalyzer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Slash command to analyze messages in a channel
     @app_commands.command(
-        name="analyze",
-        description="Counts the number of messages sent by each user in the channel",
+        name="analyze", description="Analyzes messages in the channel"
     )
-    async def analyze(self, interaction: discord.Interaction):
-        # Slash command to count and analyze messages sent by users
-        await interaction.response.defer(thinking=True)  # Defer the response
+    @app_commands.describe(
+        analysis_type="Type of analysis to perform",
+        limit="Maximum number of messages to analyze",
+        user="User to analyze (default: all users)",
+    )
+    @app_commands.choices(
+        analysis_type=[
+            Choice(name="Message Count", value="message_count"),
+            Choice(name="Activity Time", value="time_activity"),
+        ]
+    )
+    async def analyze(
+        self,
+        interaction: discord.Interaction,
+        analysis_type: Choice[str],
+        limit: int = None,
+        user: discord.User = None,
+    ):
+        await interaction.response.defer(thinking=True)
+        limit = limit or 1000000
+        adjusted_limit = limit + 1  # Adjust for potential inclusion of progress message
 
-        user_message_count = {}
-
-        # Notify the user that analysis has started
         progress_message = await interaction.followup.send(
-            "Analyzing messages... This might take a while."
+            "Analyzing messages... This may take a while."
         )
 
-        # Iterate through the channel history and count messages
-        async for message in interaction.channel.history(limit=1000000):
-            # Skip the bot's own progress message
+        user_message_count = defaultdict(int)
+        user_time_activity = defaultdict(list)
+        users_to_analyze = [user.id] if user else None
+
+        timezone = pytz.timezone(config.TIMEZONE)
+
+        message_count = 0
+        progress_interval = 100  # Update progress every 100 messages
+
+        async for message in interaction.channel.history(limit=adjusted_limit):
             if message.id == progress_message.id:
                 continue
 
-            # Count messages for each user
-            if message.author in user_message_count:
-                user_message_count[message.author] += 1
-            else:
-                user_message_count[message.author] = 1
+            message_count += 1
+            if message_count % progress_interval == 0:
+                await progress_message.edit(
+                    content=f"Analyzing messages... {message_count} messages processed."
+                )
 
-        # Sort users by message count
-        sorted_user_message_count = sorted(
-            user_message_count.items(), key=lambda x: x[1], reverse=True
-        )
+            if users_to_analyze and message.author.id not in users_to_analyze:
+                continue
 
-        # Create an output string for the top contributors
-        output = "\n".join(
-            [
-                f"{user.name}: {count} messages"
-                for user, count in sorted_user_message_count
-            ]
-        )
+            if analysis_type.value == "message_count":
+                user_message_count[message.author.id] += 1
 
-        # Create an embed to display the results
+            elif analysis_type.value == "time_activity":
+                localized_time = message.created_at.astimezone(timezone)
+                user_time_activity[message.author.id].append(localized_time)
+
+        total_analyzed_info = f"**{message_count} messages analyzed.**\n"
+
+        if analysis_type.value == "message_count":
+            await self.handle_message_count(
+                interaction,
+                progress_message,
+                user,
+                user_message_count,
+                message_count,
+                total_analyzed_info,
+            )
+
+        elif analysis_type.value == "time_activity":
+            await self.handle_time_activity(
+                interaction,
+                progress_message,
+                user,
+                user_time_activity,
+                total_analyzed_info,
+            )
+        else:
+            await progress_message.edit(content="Unsupported analysis type.")
+
+    async def handle_message_count(
+        self,
+        interaction,
+        progress_message,
+        user,
+        user_message_count,
+        message_count,
+        total_analyzed_info,
+    ):
+        if user:
+            count = user_message_count.get(user.id, 0)
+            percentage = (count / message_count * 100) if message_count > 0 else 0
+            member = interaction.guild.get_member(user.id)
+            display_name = member.display_name if member else user.name
+            output = f"**{display_name}**: {count} messages ({percentage:.2f}%)"
+            heading = f"Message Count for {display_name}"
+        else:
+            sorted_user_message_count = sorted(
+                user_message_count.items(), key=lambda x: x[1], reverse=True
+            )
+            output_lines = []
+            for user_id, count in sorted_user_message_count:
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    display_name = member.display_name
+                else:
+                    try:
+                        user_obj = await self.bot.fetch_user(user_id)
+                        display_name = user_obj.name
+                    except:
+                        display_name = f"User ID {user_id}"
+                percentage = (count / message_count * 100) if message_count > 0 else 0
+                output_lines.append(
+                    f"**{display_name}**: {count} messages ({percentage:.2f}%)"
+                )
+            output = "\n".join(output_lines) or "No messages found"
+            heading = "Top Contributors"
+
         embed = discord.Embed(
             title="Message Count",
-            description="Number of messages per user",
+            description=total_analyzed_info,
             color=0x7289DA,
         )
-        embed.add_field(
-            name="Top Contributors", value=output or "No messages found", inline=False
-        )
-
-        # Edit the original message with the final result
+        embed.add_field(name=heading, value=output, inline=False)
         await progress_message.edit(content=None, embed=embed)
+
+    async def handle_time_activity(
+        self,
+        interaction,
+        progress_message,
+        user,
+        user_time_activity,
+        total_analyzed_info,
+    ):
+        if user:
+            member = interaction.guild.get_member(user.id)
+            display_name = member.display_name if member else user.name
+            times = user_time_activity.get(user.id, [])
+            if not times:
+                await progress_message.edit(
+                    content=f"No messages from {display_name} found."
+                )
+                return
+        else:
+            times = [
+                t for times_list in user_time_activity.values() for t in times_list
+            ]
+            display_name = "All Users"
+            if not times:
+                await progress_message.edit(content="No messages found.")
+                return
+
+        output, heatmap = self.generate_activity_output(
+            times, display_name, total_analyzed_info
+        )
+        embed = discord.Embed(
+            title="Activity Time Analysis",
+            description=output,
+            color=0x7289DA,
+        )
+        if heatmap:
+            file = discord.File(heatmap, filename="heatmap.png")
+            embed.set_image(url="attachment://heatmap.png")
+            await progress_message.edit(content=None, embed=embed, attachments=[file])
+        else:
+            await progress_message.edit(content=None, embed=embed)
+
+    def generate_activity_output(self, times, display_name, total_analyzed_info):
+        try:
+            hour_counts = Counter(t.hour for t in times)
+            day_counts = Counter(t.strftime("%A") for t in times)
+            month_counts = Counter(t.strftime("%B") for t in times)
+            year_counts = Counter(t.year for t in times)
+            total_messages = len(times)
+            most_common_hour, hour_count = hour_counts.most_common(1)[0]
+            most_common_day, day_count = day_counts.most_common(1)[0]
+            most_common_month, month_count = month_counts.most_common(1)[0]
+            most_common_year, year_count = year_counts.most_common(1)[0]
+            hour_percentage = hour_count / total_messages * 100
+            day_percentage = day_count / total_messages * 100
+            month_percentage = month_count / total_messages * 100
+            year_percentage = year_count / total_messages * 100
+
+            possessive_name = (
+                f"**{display_name}'s**"
+                if display_name != "All Users"
+                else "**All Users'**"
+            )
+
+            output = (
+                f"{total_analyzed_info}"
+                f"{possessive_name} most active hour: **{most_common_hour}:00** "
+                f"with {hour_count} messages ({hour_percentage:.2f}%).\n"
+                f"Most active day: **{most_common_day}** "
+                f"with {day_count} messages ({day_percentage:.2f}%).\n"
+                f"Most active month: **{most_common_month}** "
+                f"with {month_count} messages ({month_percentage:.2f}%).\n"
+                f"Most active year: **{most_common_year}** "
+                f"with {year_count} messages ({year_percentage:.2f}%)."
+            )
+
+            heatmap = self.generate_heatmap(times, display_name)
+            return output, heatmap
+        except Exception as e:
+            print(f"Error generating activity output: {e}")
+            return "Error generating activity analysis.", None
+
+    def generate_heatmap(self, timestamps, title):
+        try:
+            import numpy as np
+
+            heatmap_data = np.zeros((7, 24), dtype=int)  # 7 days, 24 hours
+
+            for t in timestamps:
+                day_of_week = t.weekday()  # Monday=0, Sunday=6
+                hour = t.hour
+                heatmap_data[day_of_week][hour] += 1
+
+            plt.figure(figsize=(12, 6))
+            plt.imshow(heatmap_data, aspect="auto", cmap="YlOrRd", origin="lower")
+            plt.colorbar(label="Message Count")
+            plt.title(f"Activity Heatmap for {title}")
+            plt.ylabel("Day of Week")
+            plt.xlabel("Hour of Day")
+            plt.yticks(
+                range(7),
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ],
+            )
+            plt.xticks(range(24), range(24))
+            plt.tight_layout()
+
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png")
+            plt.close()
+            buf.seek(0)
+            return buf
+        except Exception as e:
+            print(f"Error generating heatmap: {e}")
+            return None
 
 
 # Add cog to the bot
