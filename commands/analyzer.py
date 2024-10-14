@@ -7,6 +7,8 @@ import io
 import pytz
 import config
 from collections import defaultdict, Counter
+import datetime
+import numpy as np
 
 
 class MessageAnalyzer(commands.Cog):
@@ -25,6 +27,7 @@ class MessageAnalyzer(commands.Cog):
         analysis_type=[
             Choice(name="Message Count", value="message_count"),
             Choice(name="Activity Time", value="time_activity"),
+            Choice(name="Activity Chart", value="activity_chart"),
         ]
     )
     async def analyze(
@@ -67,7 +70,7 @@ class MessageAnalyzer(commands.Cog):
             if analysis_type.value == "message_count":
                 user_message_count[message.author.id] += 1
 
-            elif analysis_type.value == "time_activity":
+            elif analysis_type.value in ["time_activity", "activity_chart"]:
                 localized_time = message.created_at.astimezone(timezone)
                 user_time_activity[message.author.id].append(localized_time)
 
@@ -91,8 +94,105 @@ class MessageAnalyzer(commands.Cog):
                 user_time_activity,
                 total_analyzed_info,
             )
+        elif analysis_type.value == "activity_chart":
+            await self.handle_activity_chart(
+                interaction,
+                progress_message,
+                user,
+                user_time_activity,
+                total_analyzed_info,
+            )
         else:
             await progress_message.edit(content="Unsupported analysis type.")
+
+    async def handle_activity_chart(
+        self,
+        interaction,
+        progress_message,
+        user,
+        user_time_activity,
+        total_analyzed_info,
+    ):
+        if user:
+            member = interaction.guild.get_member(user.id)
+            display_name = member.display_name if member else user.name
+            times = user_time_activity.get(user.id, [])
+            if not times:
+                await progress_message.edit(
+                    content=f"No messages from {display_name} found."
+                )
+                return
+        else:
+            times = [
+                t for times_list in user_time_activity.values() for t in times_list
+            ]
+            display_name = "All Users"
+            if not times:
+                await progress_message.edit(content="No messages found.")
+                return
+
+        # Generate activity chart
+        output, chart = self.generate_activity_chart(
+            times, display_name, total_analyzed_info
+        )
+        embed = discord.Embed(
+            title="Activity Chart Analysis",
+            description=output,
+            color=0x7289DA,
+        )
+        if chart:
+            file = discord.File(chart, filename="activity_chart.png")
+            embed.set_image(url="attachment://activity_chart.png")
+            await progress_message.edit(content=None, embed=embed, attachments=[file])
+        else:
+            await progress_message.edit(content=None, embed=embed)
+
+    def generate_activity_chart(self, timestamps, display_name, total_analyzed_info):
+        try:
+            # Sort timestamps by date
+            timestamps.sort()
+            dates = [t.date() for t in timestamps]
+            date_counts = Counter(dates)
+
+            # Ensure all days in the range are present, filling in gaps with 0
+            start_date = min(dates)
+            end_date = max(dates)
+            all_dates = [
+                start_date + datetime.timedelta(days=x)
+                for x in range((end_date - start_date).days + 1)
+            ]
+            counts = [date_counts.get(date, 0) for date in all_dates]
+
+            # Apply a simple moving average to smooth the curve
+            window_size = 5
+            if len(counts) >= window_size:
+                smoothed_counts = np.convolve(
+                    counts, np.ones(window_size) / window_size, mode="same"
+                )
+            else:
+                smoothed_counts = counts
+
+            # Plot the activity chart
+            plt.figure(figsize=(12, 6))
+            plt.plot(all_dates, smoothed_counts, linestyle="-", color="b")
+            plt.xlabel("Date")
+            plt.ylabel("Number of Messages")
+            plt.title(
+                f"Activity Chart for {display_name} (Smoothed with Moving Average)"
+            )
+            plt.xticks(rotation=45)
+            plt.grid(True, linestyle="--", linewidth=0.5)
+            plt.tight_layout()
+
+            # Save to BytesIO object
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png")
+            plt.close()
+            buf.seek(0)
+            return total_analyzed_info, buf
+        except Exception as e:
+            print(f"Error generating activity chart: {e}")
+            return "Error generating activity chart analysis.", None
 
     async def handle_message_count(
         self,
