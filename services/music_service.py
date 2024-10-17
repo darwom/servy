@@ -7,6 +7,7 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import youtube_dl
 import matplotlib.pyplot as plt
 import seaborn as sns
+from discord.ext import commands
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,19 +20,13 @@ if not client_id or not client_secret:
 else:
     logging.info("Spotify client ID und secret erfolgreich geladen.")
 
+
 class Track:
     """
     A class representing a music track with its metadata.
     """
 
     def __init__(self, track_data: dict, audio_features: dict):
-        """
-        Initializes a Track object with metadata and audio features.
-
-        Args:
-            track_data (dict): The track metadata from Spotify.
-            audio_features (dict): The audio features of the track from Spotify.
-        """
         logging.debug(f"Creating Track object for '{track_data['name']}' with ID '{track_data['id']}'")
         self.id = track_data['id']
         self.name = track_data['name']
@@ -46,12 +41,6 @@ class Track:
         self.tempo = audio_features.get('tempo', 0)
 
     def to_dict(self):
-        """
-        Converts the track object to a dictionary.
-
-        Returns:
-            dict: The track metadata as a dictionary.
-        """
         return {
             "id": self.id,
             "name": self.name,
@@ -67,13 +56,8 @@ class Track:
         }
 
     def __repr__(self):
-        """
-        Returns a string representation of the track object for debugging.
-
-        Returns:
-            str: String representation of the track.
-        """
         return f"Track(id={self.id}, name={self.name}, artist={self.artist}, album={self.album}, release_date={self.release_date}, uri={self.uri})"
+
 
 class DatabaseManager:
     """
@@ -81,23 +65,11 @@ class DatabaseManager:
     """
 
     def __init__(self, db_path='history.db'):
-        """
-        Initializes the DatabaseManager with a SQLite database file.
-
-        Args:
-            db_path (str): The file path for the SQLite database.
-        """
         self.db_path = db_path
         self.connection = self.connect_to_db()
         self.create_table()
 
     def connect_to_db(self):
-        """
-        Connects to the SQLite database.
-
-        Returns:
-            sqlite3.Connection: The database connection object.
-        """
         try:
             conn = sqlite3.connect(self.db_path)
             logging.info(f"Connected to database at {self.db_path}")
@@ -107,9 +79,6 @@ class DatabaseManager:
             return None
 
     def create_table(self):
-        """
-        Creates the track history table in the database if it does not exist.
-        """
         try:
             with self.connection:
                 self.connection.execute('''
@@ -131,17 +100,8 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logging.error(f"Error creating table: {e}")
 
-    def save_track(self, track: Track, user_name: str, on_spotify: bool, timestamp: datetime, manual_addition: bool = False):
-        """
-        Saves a track entry to the database or updates the count if it exists.
-
-        Args:
-            track (Track): The track object to save.
-            user_name (str): The name of the user who requested the track.
-            on_spotify (bool): Flag indicating if the track was found on Spotify.
-            timestamp (datetime): The timestamp of the request.
-            manual_addition (bool): Flag indicating if the track was manually added.
-        """
+    def save_track(self, track: Track, user_name: str, on_spotify: bool, timestamp: datetime,
+                   manual_addition: bool = False):
         try:
             with self.connection:
                 cursor = self.connection.cursor()
@@ -158,7 +118,8 @@ class DatabaseManager:
                         INSERT INTO track_history
                         (title, artist, album, release_date, playlist_uri, user_name, on_spotify, count, timestamp, manual_addition)
                         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    ''', (track.name, track.artist, track.album, track.release_date, track.uri, user_name, on_spotify, timestamp, int(manual_addition)))
+                    ''', (track.name, track.artist, track.album, track.release_date, track.uri, user_name, on_spotify,
+                          timestamp, int(manual_addition)))
 
                 self.connection.commit()
                 logging.info(f"Track '{track.name}' by '{track.artist}' saved to database.")
@@ -166,12 +127,6 @@ class DatabaseManager:
             logging.error(f"Error saving track to database: {e}")
 
     def get_most_requested_tracks(self):
-        """
-        Retrieves the most requested tracks from the database.
-
-        Returns:
-            list of tuple: A list of tuples containing track title, artist, and request count.
-        """
         logging.info("Fetching most requested tracks.")
         cursor = self.connection.cursor()
         cursor.execute('''
@@ -184,12 +139,6 @@ class DatabaseManager:
         return cursor.fetchall()
 
     def get_top_artists(self):
-        """
-        Retrieves the top artists with the most tracks found on Spotify.
-
-        Returns:
-            list of tuple: A list of tuples containing artist name and total count.
-        """
         logging.info("Fetching top artists.")
         cursor = self.connection.cursor()
         cursor.execute('''
@@ -203,12 +152,6 @@ class DatabaseManager:
         return cursor.fetchall()
 
     def get_search_success_stats(self):
-        """
-        Fetches statistics on successful vs. unsuccessful Spotify searches.
-
-        Returns:
-            tuple: A tuple containing counts of successful and unsuccessful searches.
-        """
         logging.info("Fetching search success stats.")
         cursor = self.connection.cursor()
         cursor.execute('''
@@ -220,12 +163,6 @@ class DatabaseManager:
         return cursor.fetchone()
 
     def get_user_activity_stats(self):
-        """
-        Retrieves user activity statistics indicating most active users.
-
-        Returns:
-            list of tuple: A list of tuples containing user names and total request count.
-        """
         logging.info("Fetching user activity stats.")
         cursor = self.connection.cursor()
         cursor.execute('''
@@ -238,9 +175,6 @@ class DatabaseManager:
         return cursor.fetchall()
 
     def generate_activity_heatmap(self):
-        """
-        Generates and saves a heatmap of user activity over time.
-        """
         logging.info("Generating activity heatmap.")
         cursor = self.connection.cursor()
         cursor.execute('''
@@ -269,16 +203,19 @@ class DatabaseManager:
             plt.savefig('activity_heatmap.png')
             logging.info("Activity heatmap generated and saved as 'activity_heatmap.png'.")
 
-class SpotifyParser:
+
+class MusicService(commands.Cog):
     """
-    A class to parse and interact with Spotify data related to YouTube links.
+    A class that wraps the Spotify and YouTube music services as a Discord bot cog.
     """
 
-    def __init__(self):
-        """
-        Initializes SpotifyParser with Spotify API and YouTube data extractor.
-        """
-        self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=client_id, client_secret=client_secret))
+    def __init__(self, bot):
+        self.bot = bot
+        self.sp = None  # Spotify client will be initialized if credentials are available
+        if client_id and client_secret:
+            self.sp = spotipy.Spotify(
+                auth_manager=SpotifyClientCredentials(client_id=client_id, client_secret=client_secret))
+
         self.ytdl = youtube_dl.YoutubeDL({
             'quiet': True,
             'noplaylist': True,
@@ -286,16 +223,21 @@ class SpotifyParser:
         })
         self.db_manager = DatabaseManager()
 
+    @commands.command(name='youtube_to_spotify')
+    async def youtube_to_spotify(self, ctx, youtube_url: str):
+        user_name = ctx.author.name
+        timestamp = datetime.now()
+        track = self.check_youtube_in_spotify(youtube_url, user_name, timestamp)
+        if track:
+            await ctx.send(f"Track '{track.name}' by {track.artist} found on Spotify!")
+        else:
+            await ctx.send("Track not found on Spotify.")
+
+    def check_youtube_in_spotify(self, youtube_url, user_name, timestamp):
+        title, artist = self.extract_info_from_youtube(youtube_url)
+        return self.find_on_spotify(title, artist, user_name, timestamp)
+
     def extract_info_from_youtube(self, youtube_url):
-        """
-        Extracts title and artist information from a YouTube URL.
-
-        Args:
-            youtube_url (str): The URL of the YouTube video.
-
-        Returns:
-            tuple: A tuple containing the title and artist extracted.
-        """
         try:
             logging.info(f"Extracting info from YouTube URL: {youtube_url}")
             info = self.ytdl.extract_info(youtube_url, download=False)
@@ -307,18 +249,6 @@ class SpotifyParser:
             return None, None
 
     def find_on_spotify(self, title, artist, user_name, timestamp):
-        """
-        Searches for a track on Spotify given a title and artist, then saves result.
-
-        Args:
-            title (str): The title of the track to search on Spotify.
-            artist (str): The artist of the track to search on Spotify.
-            user_name (str): The name of the user who requested the search.
-            timestamp (datetime): The timestamp of when the request was made.
-
-        Returns:
-            Track or bool: The Track object if found, False if not found.
-        """
         if not title or not artist:
             logging.error("Invalid title or artist information.")
             return False
@@ -330,53 +260,23 @@ class SpotifyParser:
             tracks = results.get('tracks', {}).get('items')
             if tracks:
                 track_data = tracks[0]
-                audio_features = self.sp.audio_features(track_data['id'])[0]  # Get audio features
+                audio_features = self.sp.audio_features(track_data['id'])[0]
                 logging.info("Found matching track on Spotify.")
                 track = Track(track_data, audio_features)
                 self.db_manager.save_track(track, user_name, on_spotify=True, timestamp=timestamp)
                 return track
             else:
                 logging.info("No matching track found on Spotify.")
-                dummy_track = Track({'id': None, 'name': title, 'artists': [{'name': artist}], 'album': {'name': '', 'release_date': ''}, 'uri': None, 'duration_ms': 0, 'popularity': 0}, {})
+                dummy_track = Track({'id': None, 'name': title, 'artists': [{'name': artist}],
+                                     'album': {'name': '', 'release_date': ''}, 'uri': None, 'duration_ms': 0,
+                                     'popularity': 0}, {})
                 self.db_manager.save_track(dummy_track, user_name, on_spotify=False, timestamp=timestamp)
                 return False
         except Exception as e:
             logging.error(f"Error searching Spotify: {e}")
             return False
 
-    def get_top_100_tracks(self, genre):
-        """
-        Fetches the top 100 tracks of a specified genre from Spotify and saves them to the database.
 
-        Args:
-            genre (str): The genre to search for top tracks on Spotify.
-        """
-        try:
-            logging.info(f"Fetching top 100 tracks for genre: {genre}")
-            results = self.sp.search(q=f'genre:"{genre}"', type='track', limit=100)
-            tracks = results.get('tracks', {}).get('items')
-
-            for track_data in tracks:
-                audio_features = self.sp.audio_features(track_data['id'])[0]  # Get audio features
-                track = Track(track_data, audio_features)
-                timestamp = datetime.now()  # Use current time as the timestamp
-                self.db_manager.save_track(track, user_name='', on_spotify=True, timestamp=timestamp, manual_addition=True)
-
-            logging.info("Top 100 tracks for genre added to database.")
-        except Exception as e:
-            logging.error(f"Error fetching top tracks for genre '{genre}': {e}")
-
-    def check_youtube_in_spotify(self, youtube_url, user_name, timestamp):
-        """
-        Checks if a YouTube video is available on Spotify and saves the result.
-
-        Args:
-            youtube_url (str): The URL of the YouTube video to check.
-            user_name (str): The name of the user who requested the check.
-            timestamp (datetime): The timestamp of when the request was made.
-
-        Returns:
-            Track or bool: The Track object if found on Spotify, False otherwise.
-        """
-        title, artist = self.extract_info_from_youtube(youtube_url)
-        return self.find_on_spotify(title, artist, user_name, timestamp)
+# Add the MusicService cog to the bot
+async def setup(bot):
+    await bot.add_cog(MusicService(bot))
