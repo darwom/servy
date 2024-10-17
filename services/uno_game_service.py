@@ -26,19 +26,19 @@ class CardExtractor:
         self.values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
                        'skip', 'reverse', 'draw2', 'wild', 'draw4']
 
+    # to be improved upon!
     def extract_cards(self, image_path: str):
-        # Bild laden
+        # load image
         img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
         if img is None:
             raise ValueError(f"Could not load image from {image_path}")
 
-        # Ausgabeverzeichnis erstellen, falls es nicht existiert
+        # create directory if it does not exist
         os.makedirs(self.output_dir, exist_ok=True)
 
-        # Bild in HSV-Farbraum konvertieren für bessere Farbsegmentierung
+        # convert to HSV
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        # Farbgrenzen definieren
         color_ranges = {
             'green': ([35, 50, 50], [85, 255, 255]),
             'yellow': ([20, 50, 50], [35, 255, 255]),
@@ -50,7 +50,7 @@ class CardExtractor:
         extracted_cards = []
         color_masks = {}
 
-        # Masken für jede Farbe erstellen
+        # mask for each color
         for color, (lower, upper) in color_ranges.items():
             lower = np.array(lower)
             upper = np.array(upper)
@@ -62,19 +62,17 @@ class CardExtractor:
 
             color_masks[color] = mask
 
-        # Bildgröße ermitteln
         height, width = img.shape[:2]
         expected_card_height = height // 4
         expected_card_width = width // 15
 
-        # Für jede Farbreihe
         for color_idx, color in enumerate(['green', 'yellow', 'red1', 'blue']):
             mask = color_masks[color if color != 'red1' else 'red1']
 
-            # Konturen in der Maske finden
+            # find contours in masks
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Konturen nach x-Koordinate sortieren
+            # sort by x-coord
             sorted_contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[0])
 
             for card_idx, contour in enumerate(sorted_contours):
@@ -83,11 +81,11 @@ class CardExtractor:
 
                 x, y, w, h = cv2.boundingRect(contour)
 
-                # Kartengrößen-Check
+                # check card size
                 if w < expected_card_width * 0.5 or h < expected_card_height * 0.5:
                     continue
 
-                # Karte ausschneiden mit etwas Padding
+                # cut out by using padding
                 padding = 5
                 card_img = img[max(0, y - padding):min(height, y + h + padding),
                            max(0, x - padding):min(width, x + w + padding)]
@@ -95,7 +93,7 @@ class CardExtractor:
                 if card_img.size == 0:
                     continue
 
-                # Bestimme Kartentyp und Dateinamen
+                # determine card type and color
                 if card_idx < 13:
                     color_name = self.colors[color_idx]
                     value = self.values[card_idx]
@@ -106,7 +104,7 @@ class CardExtractor:
 
                 filepath = os.path.join(self.output_dir, filename)
 
-                # Speichern mit Alpha-Kanal
+                # save with alpha channel
                 if card_img.shape[-1] == 4:
                     cv2.imwrite(filepath, card_img)
                 else:
@@ -128,12 +126,28 @@ class Card:
         return f"{self.color or 'Wild'} {self.value}"
 
     def is_playable_on(self, other_card):
+        """
+        Determines if the current card can be played on top of another card.
+
+        Args:
+            other_card: The card to check against the current card for playability.
+
+        Returns:
+            bool: True if the current card can be played on the other card, False otherwise.
+        """
         if self.color is None or other_card.color is None:
             return True
         return self.color == other_card.color or self.value == other_card.value
 
 
 def initialize_deck():
+    """
+    Initializes a standard Uno deck with colored and wildcard cards.
+
+    Returns:
+        list: A list of Card objects representing a complete Uno deck, including numbered cards,
+              action cards, and wildcards.
+    """
     colors = ["Rot", "Gelb", "Grün", "Blau"]
     values = ["1", "2", "3", "4", "5", "6", "7", "8", "9",
               "Aussetzen", "Richtungswechsel", "+2"]
@@ -164,6 +178,15 @@ class Deck:
         return self.cards.pop() if self.cards else None
 
     def shuffle_discard_pile_into_deck(self, discard_pile):
+        """
+        Shuffles the discard pile, except the top card, back into the deck.
+
+        Args:
+            discard_pile (list): The pile of cards that have been played during the game.
+
+        Note:
+            The top card of the discard pile remains on the discard pile to continue the game.
+        """
         if len(discard_pile) <= 1:
             return
         self.cards = discard_pile[:-1]
@@ -176,6 +199,18 @@ class Deck:
 class NeuralNet:
     def __init__(self, input_size, memory_size=2000, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995,
                  learning_rate=0.001):
+        """
+        Initializes a Neural Network for reinforcement learning.
+
+        Args:
+            input_size (int): The size of the input layer for the neural network.
+            memory_size (int, optional): The maximum size of the replay memory. Defaults to 2000.
+            gamma (float, optional): The discount factor for future rewards. Defaults to 0.95.
+            epsilon (float, optional): The initial exploration rate for action selection. Defaults to 1.0.
+            epsilon_min (float, optional): The minimum exploration rate. Defaults to 0.01.
+            epsilon_decay (float, optional): The decay rate for reducing epsilon after each episode. Defaults to 0.995.
+            learning_rate (float, optional): The learning rate for the neural network optimizer. Defaults to 0.001.
+        """
         self.memory = deque(maxlen=memory_size)
         self.gamma = gamma
         self.epsilon = epsilon
@@ -186,6 +221,13 @@ class NeuralNet:
         self.model = self.build_model()
 
     def build_model(self):
+        """
+        Constructs and compiles a neural network model for processing input data.
+
+        Returns:
+            keras.Model: A compiled Keras Sequential model with fully connected layers tailored
+                         for regression tasks using mean squared error as the loss function.
+        """
         model = Sequential([
             Input(shape=(self.input_size,)),
             Dense(256, activation='relu'),
@@ -197,11 +239,29 @@ class NeuralNet:
         return model
 
     def memorize(self, state, action, reward, next_state, done):
-        """ Speichert Erfahrungen im Replay-Speicher. """
+        """
+        Stores experiences in the replay memory.
+
+        Args:
+            state: The current state of the game.
+            action: The action taken by the agent.
+            reward: The reward received after taking the action.
+            next_state: The state of the game after the action is taken.
+            done (bool): A flag indicating whether the episode has ended after this step.
+        """
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state, valid_actions):
-        """ Führt eine Aktion basierend auf dem gegebenen Zustand aus, wobei Exploration gegen Exploitation abgewogen wird. """
+        """
+        Executes an action based on the given state, balancing exploration and exploitation.
+
+        Args:
+            state: The current state of the game.
+            valid_actions (list): A list of actions that are valid in the current state.
+
+        Returns:
+            The chosen action, or None if there are no valid actions.
+        """
         if not valid_actions:
             return None
 
@@ -217,12 +277,29 @@ class NeuralNet:
         return valid_actions[np.argmax(act_values)]
 
     def get_state_action_pair(self, state, action):
-        """ Kombiniert den Zustandsvektor mit einem kodierten Aktionsvektor. """
+        """
+        Combines the state vector with an encoded action vector.
+
+        Args:
+            state: The current state of the game as a vector.
+            action: The action to be encoded and combined with the state.
+
+        Returns:
+            numpy.ndarray: A concatenated array representing the combined state-action pair.
+        """
         action_vector = self.encode_action(action)
         return np.concatenate([state, action_vector], axis=1)
 
     def encode_action(self, action):
-        """ Kodiert die Aktion als einen Vektor. """
+        """
+        Encodes the given action as a vector.
+
+        Args:
+            action: The action to be encoded, typically represented by a card.
+
+        Returns:
+            numpy.ndarray: A 1x52 vector where the index corresponding to the action is set to 1, others to 0.
+        """
         action_vector = np.zeros((1, 52))
         if action is not None:
             action_vector[0, self.get_card_index(action)] = 1
@@ -230,7 +307,15 @@ class NeuralNet:
 
     @staticmethod
     def get_card_index(card):
-        """ Gibt den Index einer Karte in einem Vektor zurück. """
+        """
+        Returns the index of a card in a vector representation.
+
+        Args:
+            card: The card for which the index is to be determined, characterized by its color and value.
+
+        Returns:
+            int: The index of the card, calculated based on its color and value, for use in representations like vectors.
+        """
         colors = ["Rot", "Gelb", "Grün", "Blau"]
         values = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Aussetzen", "Richtungswechsel", "+2"]
         if card.value in ["Wild", "+4"]:
@@ -238,7 +323,12 @@ class NeuralNet:
         return colors.index(card.color) * 12 + values.index(card.value)
 
     def replay(self, batch_size):
-        """ Trainiert das Model durch erneuten Einsatz von Erfahrungen im Speicher. """
+        """
+        Trains the model by reusing experiences stored in memory.
+
+        Args:
+            batch_size (int): The number of experiences to use from memory for training the model.
+        """
         if len(self.memory) < batch_size:
             return
 
@@ -253,24 +343,40 @@ class NeuralNet:
             target_f[0][0] = target
             self.model.fit(self.get_state_action_pair(state, action), target_f, epochs=1, verbose=0)
 
-            verbose_print(f"Replay Step {index + 1}: State: {state}, Action: {action}, Reward: {reward}, Target: {target}")
+            verbose_print(
+                f"Replay Step {index + 1}: State: {state}, Action: {action}, Reward: {reward}, Target: {target}")
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
     def save_model(self, filename='uno_model.keras'):
-        """ Speichert das aktuelle Modell in einer Datei. """
+        """
+        Saves the current model to a file.
+
+        Args:
+            filename (str, optional): The name of the file to save the model to. Defaults to 'uno_model.keras'.
+        """
         self.model.save(filename)
         verbose_print(f"Model saved to {filename}")
 
     def save_experience(self, filename='uno_experience_memory.pkl'):
-        """ Speichert den Replay-Memory in einer Datei. """
+        """
+        Saves the replay memory to a file.
+
+        Args:
+            filename (str, optional): The name of the file to save the replay memory to. Defaults to 'uno_experience_memory.pkl'.
+        """
         with open(filename, 'wb') as f:
             pickle.dump(self.memory, f)
         verbose_print(f"Experience memory saved to {filename}")
 
     def load_experience(self, filename='uno_experience_memory.pkl'):
-        """ Lädt den Replay-Memory von einer Datei. """
+        """
+        Loads the replay memory from a file.
+
+        Args:
+            filename (str, optional): The name of the file to load the replay memory from. Defaults to 'uno_experience_memory.pkl'.
+        """
         try:
             with open(filename, 'rb') as f:
                 self.memory = pickle.load(f)
@@ -280,7 +386,14 @@ class NeuralNet:
 
     @staticmethod
     def save_progress(epsilon, episode, filename='trainingProgress.json'):
-        """ Speichert den Fortschritt des Trainings als JSON. """
+        """
+        Saves the training progress as a JSON file.
+
+        Args:
+            epsilon (float): The current exploration rate.
+            episode (int): The current episode number.
+            filename (str, optional): The name of the file to save the progress to. Defaults to 'trainingProgress.json'.
+        """
         progress = {'epsilon': epsilon, 'episode': episode}
         with open(filename, 'w') as f:
             json.dump(progress, f)
@@ -296,6 +409,15 @@ class UnoGame:
         self.card_extractor = CardExtractor()
 
     def extract_cards_from_image(self, image_path):
+        """
+        Extracts cards from an image using a card extraction tool.
+
+        Args:
+            image_path (str): The file path to the image from which cards should be extracted.
+
+        Returns:
+            bool: True if the card extraction was successful, False otherwise.
+        """
         try:
             extracted_cards = self.card_extractor.extract_cards(image_path)
             verbose_print(f"Successfully extracted {len(extracted_cards)} cards to the 'cards' directory")
@@ -305,6 +427,12 @@ class UnoGame:
             return False
 
     def reset_game(self):
+        """
+        Resets the game to its initial state.
+
+        This includes creating a new deck, resetting player hands, initializing the discard pile,
+        setting the starting player and game direction, and dealing starting hands to players.
+        """
         self.deck = Deck()
         self.players = [[] for _ in range(self.num_players)]
         self.discard_pile = []
@@ -316,6 +444,11 @@ class UnoGame:
             self.discard_pile.append(initial_card)
 
     def deal_starting_hands(self):
+        """
+        Deals the initial hand of cards to each player at the start of the game.
+
+        Each player receives 7 cards drawn from the deck.
+        """
         for _ in range(7):
             for player in self.players:
                 card = self.deck.draw_card()
@@ -323,6 +456,16 @@ class UnoGame:
                     player.append(card)
 
     def draw_cards(self, player_idx, count):
+        """
+        Draws a specified number of cards from the deck for a given player.
+
+        Args:
+            player_idx (int): The index of the player who will draw the cards.
+            count (int): The number of cards to draw from the deck.
+
+        Returns:
+            list: A list of cards that have been drawn.
+        """
         drawn_cards = []
         for _ in range(count):
             card = self.deck.draw_card()
@@ -337,6 +480,18 @@ class UnoGame:
         return drawn_cards
 
     def play_card(self, player_idx, card, training_mode=False):
+        """
+        Executes the action of playing a card from the specified player's hand.
+
+        Args:
+            player_idx (int): The index of the player who is playing the card.
+            card: The card being played.
+            training_mode (bool, optional): Indicates if the game is in training mode, affecting wildcard color choice.
+                                            Defaults to False.
+
+        Returns:
+            bool: True if the card was successfully played, False otherwise.
+        """
         if card in self.players[player_idx]:
             self.players[player_idx].remove(card)
             if card.color is None:
@@ -355,7 +510,8 @@ class UnoGame:
 
             elif card.value == "Richtungswechsel":
                 self.direction *= -1
-                verbose_print(f"Game direction changed to {'clockwise' if self.direction == 1 else 'counterclockwise'}.")
+                verbose_print(
+                    f"Game direction changed to {'clockwise' if self.direction == 1 else 'counterclockwise'}.")
 
                 if self.num_players == 2:
                     # Bei nur zwei Spielern bedeutet ein Richtungswechsel ein "Aussetzen"
@@ -372,6 +528,12 @@ class UnoGame:
         return False
 
     def choose_color(self):
+        """
+        Prompts the player to choose a new color during the game.
+
+        Returns:
+            str: The chosen color as a string ("Rot", "Gelb", "Grün", or "Blau").
+        """
         colors = ["Rot", "Gelb", "Grün", "Blau"]
         while True:
             verbose_print("Wähle eine neue Farbe: 1: Rot, 2: Gelb, 3: Grün, 4: Blau")
@@ -385,6 +547,13 @@ class UnoGame:
                 verbose_print("Ungültige Eingabe. Bitte eine Zahl eingeben.")
 
     def encode_state(self):
+        """
+        Encodes the current game state into a fixed-size numerical representation suitable for AI processing.
+
+        Returns:
+            numpy.ndarray: A 1x156 array representing the encoded state of the game, including the player's hand,
+                           the top card of the discard pile, and the contents of the discard pile.
+        """
         state = np.zeros((1, 156))
 
         # Encode player's hand
@@ -403,6 +572,12 @@ class UnoGame:
         return state
 
     def get_valid_actions(self):
+        """
+        Retrieves a list of valid actions (playable cards) for the current player.
+
+        Returns:
+            list: A list of cards that the current player can legally play on the discard pile.
+        """
         if not self.discard_pile:
             return self.players[self.current_player]
 
@@ -416,6 +591,16 @@ class UnoGame:
         return valid_actions
 
     def calculate_reward(self, action, old_hand_size):
+        """
+           Calculates the reward for the current player based on their action and hand size.
+
+           Args:
+               action: The action performed by the current player.
+               old_hand_size (int): The number of cards in the player's hand before the action.
+
+           Returns:
+               int: The calculated reward based on the action's effect and changes in hand size.
+           """
         if action is None:
             return -1
 
@@ -438,6 +623,18 @@ class UnoGame:
         return reward
 
     def step(self, action, training_mode=False):
+        """
+        Executes a single game step by performing the specified action.
+
+        Args:
+            action: The action to be performed by the current player.
+            training_mode (bool, optional): Indicates if the step is part of a training session.
+                                            Defaults to False.
+
+        Returns:
+            tuple: A tuple containing the old state, the action taken, the reward received,
+                   the new state, and a boolean indicating if the game is done.
+        """
         old_state = self.encode_state()
         old_hand_size = len(self.players[self.current_player])
 
@@ -465,6 +662,14 @@ class UnoGame:
         return None
 
     def train(self, num_episodes=1000, batch_size=32, save_every=100):
+        """
+        Trains the AI model over a specified number of episodes.
+
+        Args:
+            num_episodes (int, optional): The number of episodes to train the model. Defaults to 1000.
+            batch_size (int, optional): The batch size used for experience replay during training. Defaults to 32.
+            save_every (int, optional): Frequency (in steps) at which the model and progress are saved. Defaults to 100.
+        """
         total_steps = 0
         for episode in range(num_episodes):
             self.reset_game()
@@ -494,6 +699,13 @@ class UnoGame:
                 verbose_print(f"Episode: {episode}, Total Reward: {total_reward}, Epsilon: {self.nn.epsilon:.2f}")
 
     def play_game(self, verbose=True):
+        """
+        Simulates a text-based game where an AI plays the entire game.
+
+        Args:
+            verbose (bool, optional): If True, displays detailed game progression information.
+                                      Defaults to True.
+        """
         self.reset_game()
 
         while True:
@@ -520,12 +732,12 @@ class UnoGame:
 
     def play_uno_cmd(self, verbose=True):
         """
-            Spielt eine textbasierte Version von Uno in der Konsole, bei der ein menschlicher Spieler
-            gegen eine KI antritt.
+        Plays a text-based version of Uno in the console where a human player
+        competes against an AI.
 
-            Args:
-                verbose (bool, optional): Wenn True, werden detaillierte Informationen zum Spielverlauf angezeigt.
-                                          Standard ist True.
+        Args:
+            verbose (bool, optional): If True, displays detailed game progression information.
+                                      Defaults to True.
         """
         self.reset_game()
 
@@ -584,16 +796,16 @@ if __name__ == "__main__":
     game = UnoGame(num_players=2)
 
     # Laden der gespeicherten Erfahrungen, falls vorhanden
-    #game.nn.load_experience('uno_experience_memory.pkl')
+    game.nn.load_experience('uno_experience_memory.pkl')
 
     # Extract cards before starting the game
-    #game.extract_cards_from_image('uno_set.png')
+    # game.extract_cards_from_image('uno_set.png')
 
     # Uncomment to train the AI
-    game.train(num_episodes=10, batch_size=32, save_every=10)
+    # game.train(num_episodes=50, batch_size=32, save_every=10)
 
     # Start the game
-    #game.play_uno_cmd()
+    game.play_uno_cmd()
 
     # Nach dem Spiel die Erfahrungen speichern
-    #game.nn.save_experience('uno_experience_memory.pkl')
+    game.nn.save_experience('uno_experience_memory.pkl')
