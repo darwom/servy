@@ -19,8 +19,11 @@ if not client_id or not client_secret:
 else:
     logging.info("Spotify client ID und secret erfolgreich geladen.")
 
-
 class Track:
+    """
+    A class representing a music track with its metadata.
+    """
+
     def __init__(self, track_data: dict, audio_features: dict):
         """
         Initializes a Track object with metadata and audio features.
@@ -72,8 +75,11 @@ class Track:
         """
         return f"Track(id={self.id}, name={self.name}, artist={self.artist}, album={self.album}, release_date={self.release_date}, uri={self.uri})"
 
-
 class DatabaseManager:
+    """
+    A class to manage interactions with the SQLite database for track history.
+    """
+
     def __init__(self, db_path='history.db'):
         """
         Initializes the DatabaseManager with a SQLite database file.
@@ -117,14 +123,15 @@ class DatabaseManager:
                         user_name TEXT,
                         on_spotify INTEGER,
                         count INTEGER DEFAULT 1,
-                        timestamp DATETIME
+                        timestamp DATETIME,
+                        manual_addition INTEGER DEFAULT 0
                     )
                 ''')
                 logging.info("Table 'track_history' ensured in database.")
         except sqlite3.Error as e:
             logging.error(f"Error creating table: {e}")
 
-    def save_track(self, track: Track, user_name: str, on_spotify: bool, timestamp: datetime):
+    def save_track(self, track: Track, user_name: str, on_spotify: bool, timestamp: datetime, manual_addition: bool = False):
         """
         Saves a track entry to the database or updates the count if it exists.
 
@@ -133,30 +140,25 @@ class DatabaseManager:
             user_name (str): The name of the user who requested the track.
             on_spotify (bool): Flag indicating if the track was found on Spotify.
             timestamp (datetime): The timestamp of the request.
+            manual_addition (bool): Flag indicating if the track was manually added.
         """
         try:
             with self.connection:
                 cursor = self.connection.cursor()
                 cursor.execute('''
                     SELECT count FROM track_history
-                    WHERE title = ? AND artist = ? AND user_name = ?
-                ''', (track.name, track.artist, user_name))
+                    WHERE title = ? AND artist = ?
+                ''', (track.name, track.artist))
                 result = cursor.fetchone()
 
                 if result:
-                    current_count = result[0]
-                    new_count = current_count + 1
-                    cursor.execute('''
-                        UPDATE track_history
-                        SET count = ?, timestamp = ?
-                        WHERE title = ? AND artist = ? AND user_name = ?
-                    ''', (new_count, timestamp, track.name, track.artist, user_name))
+                    logging.info(f"Track '{track.name}' by '{track.artist}' already in database. Skipping addition.")
                 else:
                     cursor.execute('''
                         INSERT INTO track_history
-                        (title, artist, album, release_date, playlist_uri, user_name, on_spotify, count, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-                    ''', (track.name, track.artist, track.album, track.release_date, track.uri, user_name, on_spotify, timestamp))
+                        (title, artist, album, release_date, playlist_uri, user_name, on_spotify, count, timestamp, manual_addition)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    ''', (track.name, track.artist, track.album, track.release_date, track.uri, user_name, on_spotify, timestamp, int(manual_addition)))
 
                 self.connection.commit()
                 logging.info(f"Track '{track.name}' by '{track.artist}' saved to database.")
@@ -267,8 +269,11 @@ class DatabaseManager:
             plt.savefig('activity_heatmap.png')
             logging.info("Activity heatmap generated and saved as 'activity_heatmap.png'.")
 
-
 class SpotifyParser:
+    """
+    A class to parse and interact with Spotify data related to YouTube links.
+    """
+
     def __init__(self):
         """
         Initializes SpotifyParser with Spotify API and YouTube data extractor.
@@ -325,7 +330,7 @@ class SpotifyParser:
             tracks = results.get('tracks', {}).get('items')
             if tracks:
                 track_data = tracks[0]
-                audio_features = self.sp.audio_features(track_data['id'])[0]
+                audio_features = self.sp.audio_features(track_data['id'])[0]  # Get audio features
                 logging.info("Found matching track on Spotify.")
                 track = Track(track_data, audio_features)
                 self.db_manager.save_track(track, user_name, on_spotify=True, timestamp=timestamp)
@@ -338,6 +343,28 @@ class SpotifyParser:
         except Exception as e:
             logging.error(f"Error searching Spotify: {e}")
             return False
+
+    def get_top_100_tracks(self, genre):
+        """
+        Fetches the top 100 tracks of a specified genre from Spotify and saves them to the database.
+
+        Args:
+            genre (str): The genre to search for top tracks on Spotify.
+        """
+        try:
+            logging.info(f"Fetching top 100 tracks for genre: {genre}")
+            results = self.sp.search(q=f'genre:"{genre}"', type='track', limit=100)
+            tracks = results.get('tracks', {}).get('items')
+
+            for track_data in tracks:
+                audio_features = self.sp.audio_features(track_data['id'])[0]  # Get audio features
+                track = Track(track_data, audio_features)
+                timestamp = datetime.now()  # Use current time as the timestamp
+                self.db_manager.save_track(track, user_name='', on_spotify=True, timestamp=timestamp, manual_addition=True)
+
+            logging.info("Top 100 tracks for genre added to database.")
+        except Exception as e:
+            logging.error(f"Error fetching top tracks for genre '{genre}': {e}")
 
     def check_youtube_in_spotify(self, youtube_url, user_name, timestamp):
         """
