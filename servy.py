@@ -1,3 +1,4 @@
+from datetime import datetime
 import discord
 import config
 from discord.ext import commands
@@ -6,8 +7,11 @@ import os
 import importlib
 import inspect
 
+
 # Discord bot setup with intents
 intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -58,7 +62,7 @@ def has_valid_init(obj):
 # Event: Bot is ready
 @bot.event
 async def on_ready():
-    print(f"Bot logged in as {bot.user}")
+    print(f"Bot logged in as {bot.user} at {datetime.now().strftime('%H:%M:%S')}")
 
     # Sync global commands
     try:

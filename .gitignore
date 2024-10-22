@@ -1,4 +1,4 @@
-# Python spezifisch
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -7,14 +7,17 @@ __pycache__/
 *.env.*
 .env.*
 
-# Virtuelle Umgebungen
+# Virtual Environment
 venv/
 .venv/
 
-# Distribution/Pack Dateien
+# Distribution / packaging
 build/
 dist/
 *.egg-info/
 
-# VS Code spezifisch
+# VS Code
 .vscode/
+
+# Misc
+output/
