@@ -492,8 +492,10 @@ class CancelButton(discord.ui.View):
             child.disabled = True
 
         await self.interaction.edit_original_response(
-            content="Backup process was canceled.", view=None
+            content="Process was canceled.", view=None
         )
+
+        self.parent.is_canceled = False
 
 
 # Add the cog to the bot

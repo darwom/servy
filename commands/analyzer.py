@@ -9,11 +9,13 @@ import config
 from collections import defaultdict, Counter
 import datetime
 import numpy as np
+from commands.backup import CancelButton
 
 
 class MessageAnalyzer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.is_canceled = False
 
     @app_commands.command(
         name="analyze", description="Analyzes messages in the channel"
@@ -52,7 +54,8 @@ class MessageAnalyzer(commands.Cog):
         adjusted_limit = limit + 1  # Adjust for potential inclusion of progress message
 
         progress_message = await interaction.followup.send(
-            "Analyzing messages... This may take a while."
+            content="Analyzing messages... This may take a while.",
+            view=CancelButton(self, interaction),
         )
 
         user_message_count = defaultdict(int)
@@ -70,10 +73,15 @@ class MessageAnalyzer(commands.Cog):
             if message.id == progress_message.id:
                 continue
 
+            if self.is_canceled:
+                print("Analysis canceled.")
+                return
+
             message_count += 1
             if message_count % progress_interval == 0:
                 await progress_message.edit(
-                    content=f"Analyzing messages... {message_count} messages processed."
+                    content=f"Analyzing messages... {message_count} messages processed.",
+                    view=CancelButton(self, interaction),
                 )
 
             if users_to_analyze and message.author.id not in users_to_analyze:
@@ -125,7 +133,10 @@ class MessageAnalyzer(commands.Cog):
                 search_term,
             )
         else:
-            await progress_message.edit(content="Unsupported analysis type.")
+            await progress_message.edit(
+                content="Unsupported analysis type.",
+                view=None,
+            )
 
     async def handle_word_count(
         self,
@@ -175,7 +186,11 @@ class MessageAnalyzer(commands.Cog):
             color=0x7289DA,
         )
         embed.add_field(name=heading, value=output, inline=False)
-        await progress_message.edit(content=None, embed=embed)
+        await progress_message.edit(
+            content=None,
+            embed=embed,
+            view=None,
+        )
 
     async def handle_activity_chart(
         self,
@@ -191,7 +206,8 @@ class MessageAnalyzer(commands.Cog):
             times = user_time_activity.get(user.id, [])
             if not times:
                 await progress_message.edit(
-                    content=f"No messages from {display_name} found."
+                    content=f"No messages from {display_name} found.",
+                    view=None,
                 )
                 return
         else:
@@ -200,7 +216,10 @@ class MessageAnalyzer(commands.Cog):
             ]
             display_name = "All Users"
             if not times:
-                await progress_message.edit(content="No messages found.")
+                await progress_message.edit(
+                    content="No messages found.",
+                    view=None,
+                )
                 return
 
         # Generate activity chart
@@ -215,9 +234,18 @@ class MessageAnalyzer(commands.Cog):
         if chart:
             file = discord.File(chart, filename="activity_chart.png")
             embed.set_image(url="attachment://activity_chart.png")
-            await progress_message.edit(content=None, embed=embed, attachments=[file])
+            await progress_message.edit(
+                content=None,
+                embed=embed,
+                attachments=[file],
+                view=None,
+            )
         else:
-            await progress_message.edit(content=None, embed=embed)
+            await progress_message.edit(
+                content=None,
+                embed=embed,
+                view=None,
+            )
 
     def generate_activity_chart(self, timestamps, display_name, total_analyzed_info):
         try:
@@ -310,7 +338,11 @@ class MessageAnalyzer(commands.Cog):
             color=0x7289DA,
         )
         embed.add_field(name=heading, value=output, inline=False)
-        await progress_message.edit(content=None, embed=embed)
+        await progress_message.edit(
+            content=None,
+            embed=embed,
+            view=None,
+        )
 
     async def handle_time_activity(
         self,
@@ -326,7 +358,8 @@ class MessageAnalyzer(commands.Cog):
             times = user_time_activity.get(user.id, [])
             if not times:
                 await progress_message.edit(
-                    content=f"No messages from {display_name} found."
+                    content=f"No messages from {display_name} found.",
+                    view=None,
                 )
                 return
         else:
@@ -335,7 +368,10 @@ class MessageAnalyzer(commands.Cog):
             ]
             display_name = "All Users"
             if not times:
-                await progress_message.edit(content="No messages found.")
+                await progress_message.edit(
+                    content="No messages found.",
+                    view=None,
+                )
                 return
 
         output, heatmap = self.generate_activity_output(
@@ -349,9 +385,18 @@ class MessageAnalyzer(commands.Cog):
         if heatmap:
             file = discord.File(heatmap, filename="heatmap.png")
             embed.set_image(url="attachment://heatmap.png")
-            await progress_message.edit(content=None, embed=embed, attachments=[file])
+            await progress_message.edit(
+                content=None,
+                embed=embed,
+                attachments=[file],
+                view=None,
+            )
         else:
-            await progress_message.edit(content=None, embed=embed)
+            await progress_message.edit(
+                content=None,
+                embed=embed,
+                view=None,
+            )
 
     def generate_activity_output(self, times, display_name, total_analyzed_info):
         try:
