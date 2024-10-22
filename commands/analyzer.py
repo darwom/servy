@@ -22,12 +22,14 @@ class MessageAnalyzer(commands.Cog):
         analysis_type="Type of analysis to perform",
         limit="Maximum number of messages to analyze",
         user="User to analyze (default: all users)",
+        search_term="The term to search for (required if Word Count is selected)",
     )
     @app_commands.choices(
         analysis_type=[
             Choice(name="Message Count", value="message_count"),
             Choice(name="Activity Time", value="time_activity"),
             Choice(name="Activity Chart", value="activity_chart"),
+            Choice(name="Word Count", value="word_count"),
         ]
     )
     async def analyze(
@@ -36,7 +38,15 @@ class MessageAnalyzer(commands.Cog):
         analysis_type: Choice[str],
         limit: int = None,
         user: discord.User = None,
+        search_term: str = None,
     ):
+        if analysis_type.value == "word_count" and search_term is None:
+            await interaction.response.send_message(
+                "You must provide a search term for word count analysis.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(thinking=True)
         limit = limit or 1000000
         adjusted_limit = limit + 1  # Adjust for potential inclusion of progress message
@@ -46,7 +56,9 @@ class MessageAnalyzer(commands.Cog):
         )
 
         user_message_count = defaultdict(int)
+        user_word_count = defaultdict(int)
         user_time_activity = defaultdict(list)
+        word_counter = Counter()
         users_to_analyze = [user.id] if user else None
 
         timezone = pytz.timezone(config.TIMEZONE)
@@ -69,10 +81,12 @@ class MessageAnalyzer(commands.Cog):
 
             if analysis_type.value == "message_count":
                 user_message_count[message.author.id] += 1
-
             elif analysis_type.value in ["time_activity", "activity_chart"]:
                 localized_time = message.created_at.astimezone(timezone)
                 user_time_activity[message.author.id].append(localized_time)
+            elif analysis_type.value == "word_count":
+                if search_term.lower() in message.content.lower():
+                    user_word_count[message.author.id] += 1
 
         total_analyzed_info = f"**{message_count} messages analyzed.**\n"
 
@@ -85,7 +99,6 @@ class MessageAnalyzer(commands.Cog):
                 message_count,
                 total_analyzed_info,
             )
-
         elif analysis_type.value == "time_activity":
             await self.handle_time_activity(
                 interaction,
@@ -102,8 +115,67 @@ class MessageAnalyzer(commands.Cog):
                 user_time_activity,
                 total_analyzed_info,
             )
+        elif analysis_type.value == "word_count":
+            await self.handle_word_count(
+                interaction,
+                progress_message,
+                user,
+                user_word_count,
+                total_analyzed_info,
+                search_term,
+            )
         else:
             await progress_message.edit(content="Unsupported analysis type.")
+
+    async def handle_word_count(
+        self,
+        interaction,
+        progress_message,
+        user,
+        user_word_count,
+        total_analyzed_info,
+        search_term,
+    ):
+        total_word_uses = sum(user_word_count.values())
+
+        if user:
+            count = user_word_count.get(user.id, 0)
+            percentage = (count / total_word_uses * 100) if total_word_uses > 0 else 0
+            member = interaction.guild.get_member(user.id)
+            display_name = member.display_name if member else user.name
+            output = f"**{display_name}** used '{search_term}' {count} times ({percentage:.2f}%)"
+            heading = f"Word Count for {display_name}"
+        else:
+            sorted_user_word_count = sorted(
+                user_word_count.items(), key=lambda x: x[1], reverse=True
+            )
+            output_lines = []
+            for user_id, count in sorted_user_word_count:
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    display_name = member.display_name
+                else:
+                    try:
+                        user_obj = await self.bot.fetch_user(user_id)
+                        display_name = user_obj.name
+                    except:
+                        display_name = f"User ID {user_id}"
+                percentage = (
+                    (count / total_word_uses * 100) if total_word_uses > 0 else 0
+                )
+                output_lines.append(
+                    f"**{display_name}** used '{search_term}' {count} times ({percentage:.2f}%)"
+                )
+            output = "\n".join(output_lines) or f"No users found using '{search_term}'"
+            heading = f"Word Count for '{search_term}' ({total_word_uses} uses):"
+
+        embed = discord.Embed(
+            title="Word Count",
+            description=total_analyzed_info,
+            color=0x7289DA,
+        )
+        embed.add_field(name=heading, value=output, inline=False)
+        await progress_message.edit(content=None, embed=embed)
 
     async def handle_activity_chart(
         self,
