@@ -1,3 +1,6 @@
+import json
+import os
+from types import SimpleNamespace
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,7 +9,7 @@ import matplotlib.pyplot as plt
 import io
 import pytz
 import config
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, deque
 import datetime
 import numpy as np
 from commands.backup import CancelButton
@@ -22,9 +25,10 @@ class MessageAnalyzer(commands.Cog):
     )
     @app_commands.describe(
         analysis_type="Type of analysis to perform",
-        limit="Maximum number of messages to analyze",
+        limit="Maximum number of messages to analyze (default: all messages)",
         user="User to analyze (default: all users)",
-        search_term="The term to search for (required if Word Count is selected)",
+        search_term="The term to search for (only required if Word Count is selected)",
+        use_backup="Use fetched backup data for analysis if available (default: True for limit > 100)",
     )
     @app_commands.choices(
         analysis_type=[
@@ -41,6 +45,7 @@ class MessageAnalyzer(commands.Cog):
         limit: int = None,
         user: discord.User = None,
         search_term: str = None,
+        use_backup: bool = None,
     ):
         if analysis_type.value == "word_count" and search_term is None:
             await interaction.response.send_message(
@@ -53,54 +58,146 @@ class MessageAnalyzer(commands.Cog):
         limit = limit or 1000000
         adjusted_limit = limit + 1  # Adjust for potential inclusion of progress message
 
+        if use_backup is None:
+            use_backup = True
+            if adjusted_limit < 100:
+                use_backup = False
+
         progress_message = await interaction.followup.send(
             content="Analyzing messages... This may take a while.",
             view=CancelButton(self, interaction),
         )
 
+        start = datetime.datetime.now()
+
+        channel_id = interaction.channel.id
+        backup_folder = config.BACKUP_PATH
+        channel_folder = f"{backup_folder}/{channel_id}"
+        if not backup_folder:
+            use_backup = False
+
+        messages_deque = deque()
+        new_messages_fetched = 0
+        backup_timestamp = None
+
+        if use_backup and os.path.exists(channel_folder):
+            backup_files = [
+                f for f in os.listdir(channel_folder) if f.endswith(".json")
+            ]
+            backup_files.sort(reverse=True)
+            for backup_file in backup_files:
+                with open(
+                    f"{channel_folder}/{backup_file}", "r", encoding="utf-8"
+                ) as f:
+                    backup_data = json.load(f)
+                    if backup_data.get("is_complete", False):
+                        messages_deque = deque(
+                            backup_data.get("channel", {}).get("messages", [])
+                        )
+                        backup_timestamp = backup_data.get("backup_date")
+                        break
+            else:
+                use_backup = False
+
+            if messages_deque:
+                last_backup_date = datetime.datetime.fromisoformat(
+                    messages_deque[0]["created_at"]
+                )
+
+                async for message in interaction.channel.history(limit=adjusted_limit):
+                    # Check if the message is older than the last backup message eg "2024-10-25T23:34:25.602000+00:00"
+                    if message.created_at > last_backup_date:
+                        if message.id == progress_message.id:
+                            continue
+                        new_messages_fetched += 1
+                        messages_deque.appendleft(
+                            {
+                                "id": message.id,
+                                "author": {
+                                    "id": message.author.id,
+                                    "display_name": message.author.display_name,
+                                },
+                                "content": message.content,
+                                "created_at": message.created_at.isoformat(),
+                                "type": str(message.type),
+                            }
+                        )
+                    else:
+                        break
+
         user_message_count = defaultdict(int)
         user_word_count = defaultdict(int)
         user_time_activity = defaultdict(list)
-        word_counter = Counter()
-        users_to_analyze = [user.id] if user else None
 
         timezone = pytz.timezone(config.TIMEZONE)
 
         message_count = 0
-        progress_interval = 100  # Update progress every 100 messages
 
-        async for message in interaction.channel.history(limit=adjusted_limit):
+        async def analyze_message(message):
             if message.id == progress_message.id:
-                continue
-
-            if self.is_canceled:
-                print("Analysis canceled.")
                 return
 
+            nonlocal message_count
             message_count += 1
-            if message_count % progress_interval == 0:
+            if message_count % (10000 if messages_deque else 1000) == 0:
                 await progress_message.edit(
                     content=f"Analyzing messages... {message_count} messages processed.",
                     view=CancelButton(self, interaction),
                 )
 
-            if users_to_analyze and message.author.id not in users_to_analyze:
-                continue
+            if user and int(message.author.id) != user.id:
+                return
 
             if analysis_type.value == "message_count":
-                user_message_count[message.author.id] += 1
+                user_message_count[(message.author.display_name)] += 1
             elif analysis_type.value in ["time_activity", "activity_chart"]:
-                localized_time = message.created_at.astimezone(timezone)
+                localized_time = datetime.datetime.fromisoformat(
+                    str(message.created_at)
+                ).astimezone(timezone)
                 user_time_activity[message.author.id].append(localized_time)
             elif analysis_type.value == "word_count":
                 if search_term.lower() in message.content.lower():
-                    user_word_count[message.author.id] += 1
+                    user_word_count[message.author.display_name] += 1
 
-        total_analyzed_info = f"**{message_count} messages analyzed.**\n"
+        if messages_deque:
+            for message in messages_deque:
+                if self.is_canceled:
+                    self.is_canceled = False
+                    return
+                if message_count >= limit:
+                    break
+
+                message = SimpleNamespace(**message)
+                message.author = SimpleNamespace(**message.author)
+
+                await analyze_message(message)
+        else:
+            async for message in interaction.channel.history(limit=adjusted_limit):
+                if self.is_canceled:
+                    self.is_canceled = False
+                    return
+
+                await analyze_message(message)
+
+        end = datetime.datetime.now()
+        formatted_loop_time = f"{(end - start).seconds // 60}:{(end - start).seconds % 60:02}.{(end - start).microseconds // 1000:03}"
+        fomatted_buckup_time = (
+            datetime.datetime.strptime(backup_timestamp, "%Y%m%d-%H%M%S").strftime(
+                "%d.%m.%Y at %H:%M"
+            )
+            if backup_timestamp
+            else "N/A"
+        )
+
+        backup_info = (
+            f"Backup data used from {fomatted_buckup_time} with {new_messages_fetched} new messages fetched.\n"
+            if messages_deque
+            else ""
+        )
+        total_analyzed_info = f"**{message_count} messages analyzed in {formatted_loop_time}.**\n{backup_info}"
 
         if analysis_type.value == "message_count":
             await self.handle_message_count(
-                interaction,
                 progress_message,
                 user,
                 user_message_count,
@@ -125,7 +222,6 @@ class MessageAnalyzer(commands.Cog):
             )
         elif analysis_type.value == "word_count":
             await self.handle_word_count(
-                interaction,
                 progress_message,
                 user,
                 user_word_count,
@@ -140,7 +236,6 @@ class MessageAnalyzer(commands.Cog):
 
     async def handle_word_count(
         self,
-        interaction,
         progress_message,
         user,
         user_word_count,
@@ -149,36 +244,19 @@ class MessageAnalyzer(commands.Cog):
     ):
         total_word_uses = sum(user_word_count.values())
 
-        if user:
-            count = user_word_count.get(user.id, 0)
+        sorted_user_word_count = sorted(
+            user_word_count.items(), key=lambda x: x[1], reverse=True
+        )
+        output_lines = []
+        display_name = user.display_name if user else ""
+        for display_name, count in sorted_user_word_count:
             percentage = (count / total_word_uses * 100) if total_word_uses > 0 else 0
-            member = interaction.guild.get_member(user.id)
-            display_name = member.display_name if member else user.name
-            output = f"**{display_name}** used '{search_term}' {count} times ({percentage:.2f}%)"
-            heading = f"Word Count for {display_name}"
-        else:
-            sorted_user_word_count = sorted(
-                user_word_count.items(), key=lambda x: x[1], reverse=True
+            output_lines.append(
+                f"**{display_name}** used '{search_term}' {count} times ({percentage:.2f}%)"
             )
-            output_lines = []
-            for user_id, count in sorted_user_word_count:
-                member = interaction.guild.get_member(user_id)
-                if member:
-                    display_name = member.display_name
-                else:
-                    try:
-                        user_obj = await self.bot.fetch_user(user_id)
-                        display_name = user_obj.name
-                    except:
-                        display_name = f"User ID {user_id}"
-                percentage = (
-                    (count / total_word_uses * 100) if total_word_uses > 0 else 0
-                )
-                output_lines.append(
-                    f"**{display_name}** used '{search_term}' {count} times ({percentage:.2f}%)"
-                )
-            output = "\n".join(output_lines) or f"No users found using '{search_term}'"
-            heading = f"Word Count for '{search_term}' ({total_word_uses} uses):"
+        output = "\n".join(output_lines) or f"No users found using '{search_term}'"
+        user_name = f"by {display_name} " if user else ""
+        heading = f"Word Count for '{search_term}' {user_name}({total_word_uses} uses):"
 
         embed = discord.Embed(
             title="Word Count",
@@ -203,24 +281,16 @@ class MessageAnalyzer(commands.Cog):
         if user:
             member = interaction.guild.get_member(user.id)
             display_name = member.display_name if member else user.name
-            times = user_time_activity.get(user.id, [])
-            if not times:
-                await progress_message.edit(
-                    content=f"No messages from {display_name} found.",
-                    view=None,
-                )
-                return
         else:
-            times = [
-                t for times_list in user_time_activity.values() for t in times_list
-            ]
             display_name = "All Users"
-            if not times:
-                await progress_message.edit(
-                    content="No messages found.",
-                    view=None,
-                )
-                return
+
+        times = [t for times_list in user_time_activity.values() for t in times_list]
+        if not times:
+            await progress_message.edit(
+                content="No messages found.",
+                view=None,
+            )
+            return
 
         # Generate activity chart
         output, chart = self.generate_activity_chart(
@@ -231,21 +301,15 @@ class MessageAnalyzer(commands.Cog):
             description=output,
             color=0x7289DA,
         )
+        file = discord.File(chart, filename="activity_chart.png") if chart else None
         if chart:
-            file = discord.File(chart, filename="activity_chart.png")
             embed.set_image(url="attachment://activity_chart.png")
-            await progress_message.edit(
-                content=None,
-                embed=embed,
-                attachments=[file],
-                view=None,
-            )
-        else:
-            await progress_message.edit(
-                content=None,
-                embed=embed,
-                view=None,
-            )
+        await progress_message.edit(
+            content=None,
+            embed=embed,
+            attachments=[file] if file else [],
+            view=None,
+        )
 
     def generate_activity_chart(self, timestamps, display_name, total_analyzed_info):
         try:
@@ -291,45 +355,33 @@ class MessageAnalyzer(commands.Cog):
             buf.seek(0)
             return total_analyzed_info, buf
         except Exception as e:
-            print(f"Error generating activity chart: {e}")
-            return "Error generating activity chart analysis.", None
+            return "Error generating activity chart analysis.", str(e)
 
     async def handle_message_count(
         self,
-        interaction,
         progress_message,
         user,
         user_message_count,
         message_count,
         total_analyzed_info,
     ):
-        if user:
-            count = user_message_count.get(user.id, 0)
+        sorted_user_message_count = sorted(
+            user_message_count.items(), key=lambda x: x[1], reverse=True
+        )
+        output_lines = []
+        display_name = user.display_name if user else ""
+
+        for display_name, count in sorted_user_message_count:
             percentage = (count / message_count * 100) if message_count > 0 else 0
-            member = interaction.guild.get_member(user.id)
-            display_name = member.display_name if member else user.name
-            output = f"**{display_name}**: {count} messages ({percentage:.2f}%)"
+            output_lines.append(
+                f"**{display_name}**: {count} messages ({percentage:.2f}%)"
+            )
+
+        output = "\n".join(output_lines) or "No messages found"
+        output = output[:1019] + "..." if len(output) > 1024 else output
+        if user:
             heading = f"Message Count for {display_name}"
         else:
-            sorted_user_message_count = sorted(
-                user_message_count.items(), key=lambda x: x[1], reverse=True
-            )
-            output_lines = []
-            for user_id, count in sorted_user_message_count:
-                member = interaction.guild.get_member(user_id)
-                if member:
-                    display_name = member.display_name
-                else:
-                    try:
-                        user_obj = await self.bot.fetch_user(user_id)
-                        display_name = user_obj.name
-                    except:
-                        display_name = f"User ID {user_id}"
-                percentage = (count / message_count * 100) if message_count > 0 else 0
-                output_lines.append(
-                    f"**{display_name}**: {count} messages ({percentage:.2f}%)"
-                )
-            output = "\n".join(output_lines) or "No messages found"
             heading = "Top Contributors"
 
         embed = discord.Embed(
@@ -355,24 +407,16 @@ class MessageAnalyzer(commands.Cog):
         if user:
             member = interaction.guild.get_member(user.id)
             display_name = member.display_name if member else user.name
-            times = user_time_activity.get(user.id, [])
-            if not times:
-                await progress_message.edit(
-                    content=f"No messages from {display_name} found.",
-                    view=None,
-                )
-                return
         else:
-            times = [
-                t for times_list in user_time_activity.values() for t in times_list
-            ]
             display_name = "All Users"
-            if not times:
-                await progress_message.edit(
-                    content="No messages found.",
-                    view=None,
-                )
-                return
+
+        times = [t for times_list in user_time_activity.values() for t in times_list]
+        if not times:
+            await progress_message.edit(
+                content="No messages found.",
+                view=None,
+            )
+            return
 
         output, heatmap = self.generate_activity_output(
             times, display_name, total_analyzed_info
@@ -382,21 +426,15 @@ class MessageAnalyzer(commands.Cog):
             description=output,
             color=0x7289DA,
         )
+        file = discord.File(heatmap, filename="heatmap.png") if heatmap else None
         if heatmap:
-            file = discord.File(heatmap, filename="heatmap.png")
             embed.set_image(url="attachment://heatmap.png")
-            await progress_message.edit(
-                content=None,
-                embed=embed,
-                attachments=[file],
-                view=None,
-            )
-        else:
-            await progress_message.edit(
-                content=None,
-                embed=embed,
-                view=None,
-            )
+        await progress_message.edit(
+            content=None,
+            embed=embed,
+            attachments=[file] if file else [],
+            view=None,
+        )
 
     def generate_activity_output(self, times, display_name, total_analyzed_info):
         try:
@@ -435,8 +473,7 @@ class MessageAnalyzer(commands.Cog):
             heatmap = self.generate_heatmap(times, display_name)
             return output, heatmap
         except Exception as e:
-            print(f"Error generating activity output: {e}")
-            return "Error generating activity analysis.", None
+            return "Error generating activity analysis.", str(e)
 
     def generate_heatmap(self, timestamps, title):
         try:
@@ -476,8 +513,7 @@ class MessageAnalyzer(commands.Cog):
             buf.seek(0)
             return buf
         except Exception as e:
-            print(f"Error generating heatmap: {e}")
-            return None
+            return "Error generating heatmap.", str(e)
 
 
 # Add cog to the bot

@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import discord
 from discord import app_commands
@@ -6,6 +7,7 @@ import os
 import json
 from datetime import datetime
 import re
+import config
 
 
 class BackupCog(commands.Cog):
@@ -32,16 +34,20 @@ class BackupCog(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
 
+        await interaction.followup.send(
+            content="Backing up messages... This may take a while.",
+            view=CancelButton(self, interaction),
+        )
+
         channel = interaction.channel
         channel_id = channel.id
         default_limit = 1000000
         limit = limit or default_limit
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_folder = f"./output/backups"
+        backup_folder = config.BACKUP_PATH
         channel_folder = f"{backup_folder}/{channel_id}"
         attachments_folder = f"{channel_folder}/attachments"
 
-        # os.makedirs(backup_folder, exist_ok=True)
         os.makedirs(attachments_folder, exist_ok=True)
         os.makedirs(channel_folder, exist_ok=True)
 
@@ -149,6 +155,7 @@ class BackupCog(commands.Cog):
 
             if self.is_canceled:
                 print("Backup process was canceled.")
+                self.is_canceled = False
                 return
 
             # Add user to the set of users if not already present
@@ -163,7 +170,7 @@ class BackupCog(commands.Cog):
                     "display_name": message.author.display_name,
                 },
                 "content": message.content,
-                "timestamp": message.created_at.isoformat(),
+                "created_at": message.created_at.isoformat(),
                 "type": str(message.type),
             }
 
@@ -358,7 +365,7 @@ class BackupCog(commands.Cog):
             processed_messages += 1
 
             # Update the progress message every 100 messages
-            if processed_messages % 100 == 0:
+            if processed_messages % 1000 == 0:
                 await interaction.edit_original_response(
                     content=f"Backing up messages... {processed_messages} processed.",
                     view=CancelButton(self, interaction),
@@ -494,8 +501,6 @@ class CancelButton(discord.ui.View):
         await self.interaction.edit_original_response(
             content="Process was canceled.", view=None
         )
-
-        self.parent.is_canceled = False
 
 
 # Add the cog to the bot

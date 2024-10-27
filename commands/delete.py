@@ -1,7 +1,8 @@
+from datetime import timezone
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import timezone
+from discord.app_commands import Choice
 import pytz
 import config
 
@@ -10,23 +11,38 @@ class DeleteMessages(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Slash command to delete messages based on count or text search
+    # Command to delete messages based on count or search
     @app_commands.command(
-        name="delete", description="Delete messages based on count or text search"
+        name="delete", description="Delete messages based on count or search term"
+    )
+    @app_commands.choices(
+        delete_type=[
+            Choice(name="Delete by Count", value="count"),
+            Choice(name="Delete by Search", value="search"),
+        ]
+    )
+    @app_commands.describe(
+        delete_type="Select whether to delete by message count or search term",
+        value="The value for the selected option: number of messages for count, term for search",
     )
     async def delete_messages(
-        self, interaction: discord.Interaction, count: int = None, search: str = None
+        self,
+        interaction: discord.Interaction,
+        delete_type: Choice[str],
+        value: str,
     ):
-        # Slash command to delete messages
-        if count:
-            await self.prompt_delete_by_count(interaction, count)
-        elif search:
-            await self.search_and_prompt_delete(interaction, search)
-        else:
-            await interaction.response.send_message(
-                "Please provide either a message count or a search term.",
-                ephemeral=True,
-            )
+        # Logic based on choice selection
+        if delete_type.value == "count":
+            try:
+                count = int(value)
+                await self.prompt_delete_by_count(interaction, count)
+            except ValueError:
+                await interaction.response.send_message(
+                    "Please provide a valid number for count.", ephemeral=True
+                )
+        elif delete_type.value == "search":
+            search_term = value
+            await self.search_and_prompt_delete(interaction, search_term)
 
     async def search_and_prompt_delete(self, interaction, search):
         # Search for the message containing the search term and count messages

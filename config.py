@@ -14,3 +14,4 @@ RCON_PORT = 25575
 CONSOLE_CHANNEL_ID = 1292595944344256553
 RCON_IP = "localhost"
 TIMEZONE = "Europe/Berlin"
+BACKUP_PATH = "./output/backups"
