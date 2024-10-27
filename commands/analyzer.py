@@ -10,7 +10,7 @@ import io
 import pytz
 import config
 from collections import defaultdict, Counter, deque
-import datetime
+from datetime import datetime, timedelta
 import numpy as np
 from commands.backup import CancelButton
 
@@ -29,6 +29,7 @@ class MessageAnalyzer(commands.Cog):
         user="User to analyze (default: all users)",
         search_term="The term to search for (only required if Word Count is selected)",
         use_backup="Use fetched backup data for analysis if available (default: True for limit > 100)",
+        ephemeral="Only I can see the response (default: False)",
     )
     @app_commands.choices(
         analysis_type=[
@@ -46,6 +47,7 @@ class MessageAnalyzer(commands.Cog):
         user: discord.User = None,
         search_term: str = None,
         use_backup: bool = None,
+        ephemeral: bool = False,
     ):
         if analysis_type.value == "word_count" and search_term is None:
             await interaction.response.send_message(
@@ -54,9 +56,9 @@ class MessageAnalyzer(commands.Cog):
             )
             return
 
-        await interaction.response.defer(thinking=True)
+        await interaction.response.defer(ephemeral=ephemeral)
         limit = limit or 1000000
-        adjusted_limit = limit + 1  # Adjust for potential inclusion of progress message
+        adjusted_limit = limit + 1 if not ephemeral else limit
 
         if use_backup is None:
             use_backup = True
@@ -68,7 +70,7 @@ class MessageAnalyzer(commands.Cog):
             view=CancelButton(self, interaction),
         )
 
-        start = datetime.datetime.now()
+        start = datetime.now()
 
         channel_id = interaction.channel.id
         backup_folder = config.BACKUP_PATH
@@ -100,7 +102,7 @@ class MessageAnalyzer(commands.Cog):
                 use_backup = False
 
             if messages_deque:
-                last_backup_date = datetime.datetime.fromisoformat(
+                last_backup_date = datetime.fromisoformat(
                     messages_deque[0]["created_at"]
                 )
 
@@ -151,7 +153,7 @@ class MessageAnalyzer(commands.Cog):
             if analysis_type.value == "message_count":
                 user_message_count[(message.author.display_name)] += 1
             elif analysis_type.value in ["time_activity", "activity_chart"]:
-                localized_time = datetime.datetime.fromisoformat(
+                localized_time = datetime.fromisoformat(
                     str(message.created_at)
                 ).astimezone(timezone)
                 user_time_activity[message.author.id].append(localized_time)
@@ -179,10 +181,10 @@ class MessageAnalyzer(commands.Cog):
 
                 await analyze_message(message)
 
-        end = datetime.datetime.now()
+        end = datetime.now()
         formatted_loop_time = f"{(end - start).seconds // 60}:{(end - start).seconds % 60:02}.{(end - start).microseconds // 1000:03}"
         fomatted_buckup_time = (
-            datetime.datetime.strptime(backup_timestamp, "%Y%m%d-%H%M%S").strftime(
+            datetime.strptime(backup_timestamp, "%Y%m%d-%H%M%S").strftime(
                 "%d.%m.%Y at %H:%M"
             )
             if backup_timestamp
@@ -322,7 +324,7 @@ class MessageAnalyzer(commands.Cog):
             start_date = min(dates)
             end_date = max(dates)
             all_dates = [
-                start_date + datetime.timedelta(days=x)
+                start_date + timedelta(days=x)
                 for x in range((end_date - start_date).days + 1)
             ]
             counts = [date_counts.get(date, 0) for date in all_dates]
