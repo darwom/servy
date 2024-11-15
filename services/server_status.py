@@ -38,6 +38,7 @@ class ServerStatusService:
 
     # Method to update the bot's presence based on the server status
     async def update_presence(self):
+        await self.bot.wait_until_ready()  # Wait until the bot is ready
         async with self.lock:
             status = await self.get_server_status()
 
