@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      property="og:title"
+      content="Zwaggerboyz Minecraft Server Map"
+    />
+    <meta
+      property="og:description"
+      content="Here you can view the maps of the Zwaggerboyz Minecraft server."
+    />
+    <meta
+      property="og:image"
+      content="https://growflow.sbs/static/preview.jpg"
+    />
+    <meta
+      name="twitter:card"
+      content="summary_large_image"
+    />
+    <meta
+      property="og:url"
+      content="https://growflow.sbs/"
+    />
+    <meta
+      property="og:type"
+      content="website"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta
+      name="theme-color"
+      content="#bd388d"
+      data-react-helmet="true"
+    />
+    <link
+      rel="preload"
+      href="/static/styles.css"
+      as="style"
+    />
+    <link
+      rel="icon"
+      type="image/x-icon"
+      href="/static/favicon.ico"
+    />
+    <link
+      rel="stylesheet"
+      href="/static/styles.css"
+    />
+    <title>Zwaggerboyz Map</title>
+  </head>
+  <body>
+    <header>
+      <div>
+        <div class="logo"></div>
+        <button
+          class="map-button active"
+          data-map="world"
+        >
+          World
+        </button>
+        <button
+          class="map-button"
+          data-map="nether"
+        >
+          Nether
+        </button>
+        <button
+          class="map-button"
+          data-map="end"
+        >
+          End
+        </button>
+      </div>
+      <div>
+        <span id="timestamp">Last updated: Loading...</span>
+        <button id="reloadButton">Update Map</button>
+        <button id="marker">Marker</button>
+      </div>
+    </header>
+    <div id="markerForm">
+      <h3>Add a Text Marker</h3>
+      <div class="markerInputs">
+        <input
+          type="number"
+          id="markerX"
+          placeholder="X coordinate"
+          required
+        />
+        <input
+          type="number"
+          id="markerZ"
+          placeholder="Z coordinate"
+          required
+        />
+        <input
+          type="text"
+          id="markerText"
+          placeholder="Marker Text"
+          maxlength="32"
+          required
+        />
+        <button id="addMarkerButton">Add Marker</button>
+      </div>
+      <span>Press CTRL+C to grab the current cursor coordinates. Note: Removing markers requires manual action!</span>
+    </div>
+    <div id="mapContainer">
+      <iframe
+        title="Minecraft Server Map"
+        id="mapFrame"
+        src="/maps?map=world"
+        width="100%"
+        height="100%"
+        frameborder="0"
+      ></iframe>
+    </div>
+    <script>
+      const mapFrame = document.getElementById('mapFrame');
+      const timestampElement = document.getElementById('timestamp');
+      const buttons = document.querySelectorAll('.map-button');
+
+      // Update Timestamp
+      const updateTimestamp = (map) => {
+        fetch(`/get_file_date?map=${map}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.last_updated) {
+              timestampElement.textContent = `Last updated: ${data.last_updated}`;
+            } else {
+              timestampElement.textContent = `Last updated: Error fetching timestamp`;
+            }
+          })
+          .catch(() => {
+            timestampElement.textContent = `Last updated: Error fetching timestamp`;
+          });
+      };
+
+      // Add event listener to each map button
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          buttons.forEach((btn) => btn.classList.remove('active'));
+          button.classList.add('active');
+          const map = button.getAttribute('data-map');
+          mapFrame.src = `/maps?map=${map}`;
+          updateTimestamp(map);
+        });
+      });
+
+      // Update Button
+      document.getElementById('reloadButton').addEventListener('click', () => {
+        const activeMap = document.querySelector('.map-button.active').getAttribute('data-map');
+        fetch('/update_map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ map: activeMap }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.message) {
+              alert(data.message);
+              updateTimestamp(activeMap);
+              mapFrame.src = `/maps?map=${activeMap}`;
+            } else {
+              alert(data.error || 'Error updating map');
+            }
+          })
+          .catch(() => alert('Error updating map'));
+      });
+
+      // Initial world map load
+      updateTimestamp('world');
+
+      // Marker panel
+      markerButton = document.getElementById('marker');
+      markerButton.addEventListener('click', () => {
+        const markerForm = document.getElementById('markerForm');
+        markerForm.classList.toggle('visible');
+        markerButton.classList.toggle('active');
+      });
+
+      // Add marker
+      document.getElementById('addMarkerButton').addEventListener('click', () => {
+        const x = document.getElementById('markerX').value;
+        const z = document.getElementById('markerZ').value;
+        const text = document.getElementById('markerText').value;
+        const activeMap = document.querySelector('.map-button.active').getAttribute('data-map');
+
+        if (!x || !z || !text) {
+          alert('Please fill all fields.');
+          return;
+        }
+
+        fetch('/add_marker', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            map: activeMap,
+            marker: {
+              x: parseInt(x, 10),
+              z: parseInt(z, 10),
+              text: text,
+            },
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.message) {
+              alert(data.message);
+
+              // Clear fields after successful addition
+              document.getElementById('markerX').value = '';
+              document.getElementById('markerZ').value = '';
+              document.getElementById('markerText').value = '';
+
+              mapFrame.src = `/maps?map=${activeMap}`;
+            } else {
+              alert(data.error || 'Error adding marker');
+            }
+          })
+          .catch(() => alert('Error adding marker'));
+      });
+
+      // Ctrl+C for extracting cursor coordinates
+      window.addEventListener('keydown', (event) => {
+        if (event.ctrlKey && event.key === 'c') {
+          const mousePositionDiv = mapFrame.contentDocument.querySelector('.ol-mouse-position');
+          if (mousePositionDiv) {
+            const coords = mousePositionDiv.textContent.trim().split(',');
+            if (coords.length === 2) {
+              const [x, z] = coords.map((coord) => parseInt(coord.trim(), 10));
+              document.getElementById('markerX').value = x || '';
+              document.getElementById('markerZ').value = z || '';
+            }
+          }
+        }
+      });
+      window.addEventListener('message', (event) => {
+        if (event.source === mapFrame.contentWindow) {
+          const { type, coords } = event.data;
+          if (type === 'coordinates') {
+            document.getElementById('markerX').value = coords.x || '';
+            document.getElementById('markerZ').value = coords.z || '';
+          }
+        }
+      });
+
+      window.addEventListener('load', () => {
+        document.body.classList.remove('content-hidden');
+        document.body.classList.add('content-visible');
+      });
+    </script>
+  </body>
+</html>
