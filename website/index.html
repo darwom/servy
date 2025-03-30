@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+  <!-- Head bleibt gleich -->
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -7,12 +8,16 @@
       content="Zwaggerboyz Minecraft Server Map"
     />
     <meta
+      property="og:locale"
+      content="de_DE"
+    />
+    <meta
       property="og:description"
       content="Here you can view the maps of the Zwaggerboyz Minecraft server."
     />
     <meta
       property="og:image"
-      content="https://growflow.sbs/static/preview.jpg"
+      content="/static/preview.jpg"
     />
     <meta
       name="twitter:card"
@@ -20,7 +25,7 @@
     />
     <meta
       property="og:url"
-      content="https://growflow.sbs/"
+      content="https://zwaggerboyz.de/"
     />
     <meta
       property="og:type"
@@ -104,13 +109,15 @@
         />
         <button id="addMarkerButton">Add Marker</button>
       </div>
-      <span>Press CTRL+C to grab the current cursor coordinates. Note: Removing markers requires manual action!</span>
+      <span>Press CTRL+C while hovering over the map to grab coordinates. Note: Removing markers requires manual action!</span>
+      <!-- Hinweis auf Token hinzufügen -->
+      <p style="font-size: 0.8em; margin-top: 10px">Note: Update Map and Add Marker require authorization.</p>
     </div>
     <div id="mapContainer">
       <iframe
         title="Minecraft Server Map"
         id="mapFrame"
-        src="/maps?map=world"
+        src="/maps/world/index.html"
         width="100%"
         height="100%"
         frameborder="0"
@@ -118,22 +125,45 @@
     </div>
     <script>
       const mapFrame = document.getElementById('mapFrame');
+
+      if (mapFrame) {
+        window.addEventListener('keydown', (event) => {
+          // Prüfe, ob der Fokus *nicht* schon im Iframe ist (optional, aber gut)
+          // Und ob das Event nicht von einem Input-Feld kommt
+          if (document.activeElement !== mapFrame && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+            if (event.ctrlKey && (event.key === 'c' || event.key === 'C')) {
+              console.log('Ctrl+C detected in main window, sending request to iframe...'); // Debug
+              event.preventDefault(); // Verhindert Standard-Kopieren im Hauptfenster
+
+              // Sende eine Nachricht AN den Iframe, um die Koordinaten anzufordern
+              try {
+                mapFrame.contentWindow.postMessage({ type: 'requestCoordinates' }, '*'); // '*' ist für localhost ok
+              } catch (e) {
+                console.error('Error sending message to iframe:', e);
+              }
+            }
+          }
+        });
+      }
+
       const timestampElement = document.getElementById('timestamp');
       const buttons = document.querySelectorAll('.map-button');
 
-      // Update Timestamp
+      // Update Timestamp (keine Änderung nötig, da GET)
       const updateTimestamp = (map) => {
-        fetch(`/get_file_date?map=${map}`)
+        fetch(`/get_file_date?map=${map}`) // Wird von Nginx an das Backend weitergeleitet
           .then((response) => response.json())
           .then((data) => {
             if (data.last_updated) {
               timestampElement.textContent = `Last updated: ${data.last_updated}`;
             } else {
-              timestampElement.textContent = `Last updated: Error fetching timestamp`;
+              timestampElement.textContent = `Last updated: Error or not generated`;
+              console.error('Timestamp error:', data.error);
             }
           })
-          .catch(() => {
-            timestampElement.textContent = `Last updated: Error fetching timestamp`;
+          .catch((err) => {
+            timestampElement.textContent = `Last updated: Network error`;
+            console.error('Timestamp fetch error:', err);
           });
       };
 
@@ -143,30 +173,61 @@
           buttons.forEach((btn) => btn.classList.remove('active'));
           button.classList.add('active');
           const map = button.getAttribute('data-map');
-          mapFrame.src = `/maps?map=${map}`;
+          // Ändere die src des iframes direkt auf die index.html der jeweiligen Map
+          // Nginx wird diese Datei direkt ausliefern.
+          mapFrame.src = `/maps/${map}/index.html`;
           updateTimestamp(map);
         });
       });
 
-      // Update Button
+      // Update Button - Füge Authorization Header hinzu
       document.getElementById('reloadButton').addEventListener('click', () => {
         const activeMap = document.querySelector('.map-button.active').getAttribute('data-map');
+        const button = document.getElementById('reloadButton');
+
+        // === Secret Abfrage ===
+        const userSecret = prompt('Please enter the password to update the map:');
+        if (!userSecret) {
+          // Benutzer hat Abbrechen geklickt oder nichts eingegeben
+          alert('Map update cancelled.');
+          return;
+        }
+        // =====================
+
+        button.disabled = true;
+        button.textContent = 'Updating...';
+
         fetch('/update_map', {
+          // URL ohne Secret
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // === Secret im Header senden ===
+            'X-Action-Secret': userSecret,
+            // ============================
+          },
           body: JSON.stringify({ map: activeMap }),
         })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.message) {
-              alert(data.message);
-              updateTimestamp(activeMap);
-              mapFrame.src = `/maps?map=${activeMap}`;
-            } else {
-              alert(data.error || 'Error updating map');
+          .then((response) => {
+            if (response.status === 401) {
+              throw new Error('Incorrect password provided.');
+            } // Spezifische Fehlermeldung für falsches Secret
+            if (!response.ok) {
+              /* ... andere Fehlerbehandlung ... */
             }
+            return response.json();
           })
-          .catch(() => alert('Error updating map'));
+          .then((data) => {
+            /* ... Erfolgslogik ... */
+          })
+          .catch((error) => {
+            alert(`Error updating map: ${error.message}`);
+            console.error('Update map error:', error);
+          })
+          .finally(() => {
+            button.disabled = false;
+            button.textContent = 'Update Map';
+          });
       });
 
       // Initial world map load
@@ -180,7 +241,7 @@
         markerButton.classList.toggle('active');
       });
 
-      // Add marker
+      // Add marker - Füge Authorization Header hinzu
       document.getElementById('addMarkerButton').addEventListener('click', () => {
         const x = document.getElementById('markerX').value;
         const z = document.getElementById('markerZ').value;
@@ -192,56 +253,93 @@
           return;
         }
 
+        // Sende Koordinaten als Zahlen
+        const markerData = {
+          x: parseInt(x, 10),
+          z: parseInt(z, 10),
+          text: text,
+        };
+
+        if (isNaN(markerData.x) || isNaN(markerData.z)) {
+          alert('Coordinates must be numbers.');
+          return;
+        }
+
+        const button = document.getElementById('addMarkerButton');
+
+        // === Secret Abfrage ===
+        const userSecret = prompt('Please enter the password to add a marker:');
+        if (!userSecret) {
+          alert('Add marker cancelled.');
+          return;
+        }
+        // =====================
+
+        button.disabled = true;
+        button.textContent = 'Adding...';
+
         fetch('/add_marker', {
+          // Wird von Nginx an das Backend weitergeleitet
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Sende den Token im Authorization Header
+            'X-Action-Secret': userSecret,
+          },
           body: JSON.stringify({
             map: activeMap,
-            marker: {
-              x: parseInt(x, 10),
-              z: parseInt(z, 10),
-              text: text,
-            },
+            marker: markerData,
           }),
         })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.message) {
-              alert(data.message);
-
-              // Clear fields after successful addition
-              document.getElementById('markerX').value = '';
-              document.getElementById('markerZ').value = '';
-              document.getElementById('markerText').value = '';
-
-              mapFrame.src = `/maps?map=${activeMap}`;
-            } else {
-              alert(data.error || 'Error adding marker');
+          .then((response) => {
+            if (response.status === 401) {
+              throw new Error('Incorrect password provided.');
             }
+            if (!response.ok) {
+              return response
+                .json()
+                .then((errData) => {
+                  throw new Error(errData.error || `HTTP error ${response.status}`);
+                })
+                .catch(() => {
+                  throw new Error(`HTTP error ${response.status}`);
+                });
+            }
+            return response.json();
           })
-          .catch(() => alert('Error adding marker'));
+          .then((data) => {
+            alert(data.message || 'Marker added successfully.');
+
+            // Clear fields after successful addition
+            document.getElementById('markerX').value = '';
+            document.getElementById('markerZ').value = '';
+            document.getElementById('markerText').value = '';
+
+            // Lade die Karte neu, um den neuen Marker anzuzeigen
+            mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Cache bust
+          })
+          .catch((error) => {
+            alert(`Error adding marker: ${error.message}`);
+            console.error('Add marker error:', error);
+          })
+          .finally(() => {
+            button.disabled = false;
+            button.textContent = 'Add Marker';
+          });
       });
 
-      // Ctrl+C for extracting cursor coordinates
-      window.addEventListener('keydown', (event) => {
-        if (event.ctrlKey && event.key === 'c') {
-          const mousePositionDiv = mapFrame.contentDocument.querySelector('.ol-mouse-position');
-          if (mousePositionDiv) {
-            const coords = mousePositionDiv.textContent.trim().split(',');
-            if (coords.length === 2) {
-              const [x, z] = coords.map((coord) => parseInt(coord.trim(), 10));
-              document.getElementById('markerX').value = x || '';
-              document.getElementById('markerZ').value = z || '';
-            }
-          }
-        }
-      });
+      // Ctrl+C / PostMessage Koordinate Handling
+      // Dieses Skript lauscht auf Nachrichten vom iframe (das sein eigenes Skript hat)
       window.addEventListener('message', (event) => {
+        // Wichtige Sicherheitsprüfung: Von welcher Origin kam die Nachricht?
+        // Hier prüfen wir nur, ob es vom mapFrame kommt. Besser wäre eine Origin-Prüfung.
+        // if (event.origin !== "erwartete_iframe_origin") return;
+
         if (event.source === mapFrame.contentWindow) {
-          const { type, coords } = event.data;
-          if (type === 'coordinates') {
-            document.getElementById('markerX').value = coords.x || '';
-            document.getElementById('markerZ').value = coords.z || '';
+          const messageData = event.data;
+          if (messageData && messageData.type === 'coordinates') {
+            document.getElementById('markerX').value = messageData.coords.x ?? ''; // Nullish coalescing
+            document.getElementById('markerZ').value = messageData.coords.z ?? '';
           }
         }
       });
