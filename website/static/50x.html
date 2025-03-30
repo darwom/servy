@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Server Error</title>
+    <link
+      rel="stylesheet"
+      href="/static/styles.css"
+    />
+    <style>
+      body.error-page {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        text-align: center;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+      .error-container {
+        max-width: 500px;
+      }
+      .error-icon {
+        font-size: 6rem;
+        margin-bottom: 20px;
+        line-height: 1;
+        animation: shake 0.5s infinite;
+      }
+      .error-container h1 {
+        color: #bd388d;
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-weight: 300;
+        font-size: 2.5rem;
+      }
+      .error-container p {
+        font-size: 1.1rem;
+        color: #ccc;
+        margin-bottom: 30px;
+        line-height: 1.6;
+      }
+      .home-link {
+        display: inline-block;
+        padding: 12px 25px;
+        background-color: #464646;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        font-size: 1rem;
+        transition: background-color 0.3s ease;
+      }
+      .home-link:hover {
+        background-color: #5d4263;
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-5px) rotate(-2deg);
+        }
+        75% {
+          transform: translateX(5px) rotate(2deg);
+        }
+      }
+    </style>
+  </head>
+  <body class="error-page">
+    <div class="error-container">
+      <div class="error-icon">🤯</div>
+      <h1>Oops! Server Hiccup</h1>
+      <p>
+        Yikes! Something went technically sideways on our end.<br />
+        We're probably already fixing it. Maybe.
+      </p>
+      <a
+        href="/"
+        class="home-link"
+        >Try Going Home</a
+      >
+    </div>
+  </body>
+</html>

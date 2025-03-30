@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-  <!-- Head bleibt gleich -->
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -8,12 +7,8 @@
       content="Zwaggerboyz Minecraft Server Map"
     />
     <meta
-      property="og:locale"
-      content="de_DE"
-    />
-    <meta
       property="og:description"
-      content="Here you can view the maps of the Zwaggerboyz Minecraft server."
+      content="View the maps of the Zwaggerboyz Minecraft server."
     />
     <meta
       property="og:image"
@@ -38,7 +33,6 @@
     <meta
       name="theme-color"
       content="#bd388d"
-      data-react-helmet="true"
     />
     <link
       rel="preload"
@@ -80,6 +74,7 @@
         </button>
       </div>
       <div>
+        <!-- <span id="playerCount">Players: Loading...</span> -->
         <span id="timestamp">Last updated: Loading...</span>
         <button id="reloadButton">Update Map</button>
         <button id="marker">Marker</button>
@@ -109,9 +104,8 @@
         />
         <button id="addMarkerButton">Add Marker</button>
       </div>
-      <span>Press CTRL+C while hovering over the map to grab coordinates. Note: Removing markers requires manual action!</span>
-      <!-- Hinweis auf Token hinzufügen -->
-      <p style="font-size: 0.8em; margin-top: 10px">Note: Update Map and Add Marker require authorization.</p>
+      <span>Press CTRL+C over map for coordinates. Removing markers requires manual action!</span>
+      <p class="note">Note: Update Map and Add Marker require a password.</p>
     </div>
     <div id="mapContainer">
       <iframe
@@ -123,231 +117,9 @@
         frameborder="0"
       ></iframe>
     </div>
-    <script>
-      const mapFrame = document.getElementById('mapFrame');
-
-      if (mapFrame) {
-        window.addEventListener('keydown', (event) => {
-          // Prüfe, ob der Fokus *nicht* schon im Iframe ist (optional, aber gut)
-          // Und ob das Event nicht von einem Input-Feld kommt
-          if (document.activeElement !== mapFrame && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
-            if (event.ctrlKey && (event.key === 'c' || event.key === 'C')) {
-              console.log('Ctrl+C detected in main window, sending request to iframe...'); // Debug
-              event.preventDefault(); // Verhindert Standard-Kopieren im Hauptfenster
-
-              // Sende eine Nachricht AN den Iframe, um die Koordinaten anzufordern
-              try {
-                mapFrame.contentWindow.postMessage({ type: 'requestCoordinates' }, '*'); // '*' ist für localhost ok
-              } catch (e) {
-                console.error('Error sending message to iframe:', e);
-              }
-            }
-          }
-        });
-      }
-
-      const timestampElement = document.getElementById('timestamp');
-      const buttons = document.querySelectorAll('.map-button');
-
-      // Update Timestamp (keine Änderung nötig, da GET)
-      const updateTimestamp = (map) => {
-        fetch(`/get_file_date?map=${map}`) // Wird von Nginx an das Backend weitergeleitet
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.last_updated) {
-              timestampElement.textContent = `Last updated: ${data.last_updated}`;
-            } else {
-              timestampElement.textContent = `Last updated: Error or not generated`;
-              console.error('Timestamp error:', data.error);
-            }
-          })
-          .catch((err) => {
-            timestampElement.textContent = `Last updated: Network error`;
-            console.error('Timestamp fetch error:', err);
-          });
-      };
-
-      // Add event listener to each map button
-      buttons.forEach((button) => {
-        button.addEventListener('click', () => {
-          buttons.forEach((btn) => btn.classList.remove('active'));
-          button.classList.add('active');
-          const map = button.getAttribute('data-map');
-          // Ändere die src des iframes direkt auf die index.html der jeweiligen Map
-          // Nginx wird diese Datei direkt ausliefern.
-          mapFrame.src = `/maps/${map}/index.html`;
-          updateTimestamp(map);
-        });
-      });
-
-      // Update Button - Füge Authorization Header hinzu
-      document.getElementById('reloadButton').addEventListener('click', () => {
-        const activeMap = document.querySelector('.map-button.active').getAttribute('data-map');
-        const button = document.getElementById('reloadButton');
-
-        // === Secret Abfrage ===
-        const userSecret = prompt('Please enter the password to update the map:');
-        if (!userSecret) {
-          // Benutzer hat Abbrechen geklickt oder nichts eingegeben
-          alert('Map update cancelled.');
-          return;
-        }
-        // =====================
-
-        button.disabled = true;
-        button.textContent = 'Updating...';
-
-        fetch('/update_map', {
-          // URL ohne Secret
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // === Secret im Header senden ===
-            'X-Action-Secret': userSecret,
-            // ============================
-          },
-          body: JSON.stringify({ map: activeMap }),
-        })
-          .then((response) => {
-            if (response.status === 401) {
-              throw new Error('Incorrect password provided.');
-            } // Spezifische Fehlermeldung für falsches Secret
-            if (!response.ok) {
-              /* ... andere Fehlerbehandlung ... */
-            }
-            return response.json();
-          })
-          .then((data) => {
-            /* ... Erfolgslogik ... */
-          })
-          .catch((error) => {
-            alert(`Error updating map: ${error.message}`);
-            console.error('Update map error:', error);
-          })
-          .finally(() => {
-            button.disabled = false;
-            button.textContent = 'Update Map';
-          });
-      });
-
-      // Initial world map load
-      updateTimestamp('world');
-
-      // Marker panel
-      markerButton = document.getElementById('marker');
-      markerButton.addEventListener('click', () => {
-        const markerForm = document.getElementById('markerForm');
-        markerForm.classList.toggle('visible');
-        markerButton.classList.toggle('active');
-      });
-
-      // Add marker - Füge Authorization Header hinzu
-      document.getElementById('addMarkerButton').addEventListener('click', () => {
-        const x = document.getElementById('markerX').value;
-        const z = document.getElementById('markerZ').value;
-        const text = document.getElementById('markerText').value;
-        const activeMap = document.querySelector('.map-button.active').getAttribute('data-map');
-
-        if (!x || !z || !text) {
-          alert('Please fill all fields.');
-          return;
-        }
-
-        // Sende Koordinaten als Zahlen
-        const markerData = {
-          x: parseInt(x, 10),
-          z: parseInt(z, 10),
-          text: text,
-        };
-
-        if (isNaN(markerData.x) || isNaN(markerData.z)) {
-          alert('Coordinates must be numbers.');
-          return;
-        }
-
-        const button = document.getElementById('addMarkerButton');
-
-        // === Secret Abfrage ===
-        const userSecret = prompt('Please enter the password to add a marker:');
-        if (!userSecret) {
-          alert('Add marker cancelled.');
-          return;
-        }
-        // =====================
-
-        button.disabled = true;
-        button.textContent = 'Adding...';
-
-        fetch('/add_marker', {
-          // Wird von Nginx an das Backend weitergeleitet
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // Sende den Token im Authorization Header
-            'X-Action-Secret': userSecret,
-          },
-          body: JSON.stringify({
-            map: activeMap,
-            marker: markerData,
-          }),
-        })
-          .then((response) => {
-            if (response.status === 401) {
-              throw new Error('Incorrect password provided.');
-            }
-            if (!response.ok) {
-              return response
-                .json()
-                .then((errData) => {
-                  throw new Error(errData.error || `HTTP error ${response.status}`);
-                })
-                .catch(() => {
-                  throw new Error(`HTTP error ${response.status}`);
-                });
-            }
-            return response.json();
-          })
-          .then((data) => {
-            alert(data.message || 'Marker added successfully.');
-
-            // Clear fields after successful addition
-            document.getElementById('markerX').value = '';
-            document.getElementById('markerZ').value = '';
-            document.getElementById('markerText').value = '';
-
-            // Lade die Karte neu, um den neuen Marker anzuzeigen
-            mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Cache bust
-          })
-          .catch((error) => {
-            alert(`Error adding marker: ${error.message}`);
-            console.error('Add marker error:', error);
-          })
-          .finally(() => {
-            button.disabled = false;
-            button.textContent = 'Add Marker';
-          });
-      });
-
-      // Ctrl+C / PostMessage Koordinate Handling
-      // Dieses Skript lauscht auf Nachrichten vom iframe (das sein eigenes Skript hat)
-      window.addEventListener('message', (event) => {
-        // Wichtige Sicherheitsprüfung: Von welcher Origin kam die Nachricht?
-        // Hier prüfen wir nur, ob es vom mapFrame kommt. Besser wäre eine Origin-Prüfung.
-        // if (event.origin !== "erwartete_iframe_origin") return;
-
-        if (event.source === mapFrame.contentWindow) {
-          const messageData = event.data;
-          if (messageData && messageData.type === 'coordinates') {
-            document.getElementById('markerX').value = messageData.coords.x ?? ''; // Nullish coalescing
-            document.getElementById('markerZ').value = messageData.coords.z ?? '';
-          }
-        }
-      });
-
-      window.addEventListener('load', () => {
-        document.body.classList.remove('content-hidden');
-        document.body.classList.add('content-visible');
-      });
-    </script>
+    <script
+      src="/static/main.js"
+      defer
+    ></script>
   </body>
 </html>
