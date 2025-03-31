@@ -51,6 +51,7 @@ input {
 }
 input[type='number'] {
   width: 100px;
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 input[type='number']::-webkit-outer-spin-button,
