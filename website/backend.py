@@ -1,13 +1,14 @@
 import os
 import json
 import subprocess
-import html
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
+import time
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 import logging
-
+from mcrcon import MCRcon
 
 # Basisverzeichnis des Skripts
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +34,21 @@ ACTION_SECRET = os.environ.get("MAP_ACTION_SECRET", "xxx")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+RCON_HOST = "localhost"
+RCON_PORT = 25575
+# WICHTIG: Passwort aus Umgebungsvariable laden!
+RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "FALLBACK_PASSWORT")
+if RCON_PASSWORD == "FALLBACK_PASSWORT":
+    logging.critical("Keine RCON_PASSWORD Umgebungsvariable gesetzt!")
+    exit(1)
+PLAYER_COUNT_CACHE_DURATION = 10  # Sekunden
+
+player_status_cache = {
+    "data": None,
+    "last_update": 0,
+    "lock": threading.Lock(),
+}
 # --------------------
 
 # --- Hilfsfunktionen ---
@@ -126,77 +142,77 @@ def run_unmined(map_name):
         return False, "An unexpected error occurred during map update."
 
 
+# backend.py (ersetze die Funktion add_marker_safely komplett hiermit)
+
+import re  # Importiere Regex Modul am Anfang der Datei
+import json  # Für sicheres String-Escaping
+
+
+# backend.py (ersetze add_marker_safely hiermit)
+
+import json  # Für json.dumps
+import logging
+import os
+import html  # Optional, wenn json.dumps nicht reicht
+
+
 def add_marker_safely(map_name, marker_data):
     """Fügt einen Marker sicher zur unmined.custom.markers.js hinzu."""
+    # --- Validierungen (wie vorher) ---
     if map_name not in ["world", "nether", "end"]:
         return False, "Invalid map name."
     if not all(k in marker_data for k in ("x", "z", "text")):
         return False, "Missing marker data."
     if not isinstance(marker_data["x"], int) or not isinstance(marker_data["z"], int):
         return False, "Invalid coordinates."
-    text = marker_data.get("text", "")
+    text = marker_data.get("text", "").strip()
     if not text or len(text) > 32:
         return False, "Invalid marker text (empty or > 32 chars)."
 
-    marker_file_path = os.path.join(
-        MAP_OUTPUT_BASE_PATH, map_name, "unmined.custom.markers.js"
-    )
+    marker_file_path = os.path.join(MAP_OUTPUT_BASE_PATH, map_name, "custom.markers.js")
 
+    # --- Prüfen ob Datei existiert ---
+    if not os.path.exists(marker_file_path):
+        logging.error(f"Marker-Datei nicht gefunden: {marker_file_path}")
+        return False, "Marker file not found on server."
+
+    # --- Neuen Marker vorbereiten ---
+    # Text sicher für JS-String escapen mit json.dumps
+    sanitized_text_json = json.dumps(text)
+
+    # Erzeuge das neue Marker-Objekt als String
+    new_marker_entry = f"""
+            {{
+                x: {marker_data['x']},
+                z: {marker_data['z']},
+                text: {sanitized_text_json},
+                textColor: "#191919",
+                font:"bold 20px Arial,Calibri,sans serif"
+            }},"""  # Komma immer anhängen
+
+    # --- Datei lesen, Marker einfügen, Datei schreiben ---
     try:
-        markers_obj = {"isEnabled": True, "markers": []}
-        if os.path.exists(marker_file_path):
-            try:
-                with open(marker_file_path, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if (
-                        content
-                        and content.startswith("UnminedCustomMarkers")
-                        and "[" in content
-                    ):
-                        start = content.find("[")
-                        end = content.rfind("]")
-                        if start != -1 and end != -1 and start < end:
-                            json_str = content[start : end + 1]
-                            json_str = re.sub(
-                                r"//.*?\n", "\n", json_str
-                            )  # Einfache Kommentare entfernen
-                            json_str = re.sub(
-                                r"/\*.*?\*/", "", json_str, flags=re.DOTALL
-                            )
-                            parsed_markers = json.loads(json_str)
-                            if isinstance(parsed_markers, list):
-                                markers_obj["markers"] = parsed_markers
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                logging.warning(
-                    f"Konnte existierende Marker-Datei nicht parsen {marker_file_path}: {e}. Starte neu."
-                )
-            except Exception as e:
-                logging.exception(
-                    f"Fehler beim Lesen der Marker-Datei {marker_file_path}"
-                )
+        # Lese den gesamten Inhalt
+        with open(marker_file_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-        # Sanitize Text Input
-        sanitized_text = html.escape(text)  # XSS Schutz!
+        # Finde die Position der schließenden Array-Klammer ']'
+        insert_pos = content.rfind("]")
 
-        new_marker = {
-            "x": marker_data["x"],
-            "z": marker_data["z"],
-            "text": sanitized_text,
-            "textColor": "#191919",
-            "font": "bold 20px Arial,Calibri,sans serif",
-        }
-        markers_obj["markers"].append(new_marker)
+        if insert_pos == -1:
+            logging.error(
+                f"Konnte schließende Array-Klammer ']' in {marker_file_path} nicht finden."
+            )
+            return False, "Marker file format error (closing bracket not found)."
 
-        # JS-Datei neu schreiben
-        output_js = "UnminedCustomMarkers = {\n    isEnabled: true,\n    markers: "
-        # Kompakteres JSON für Produktion, falls gewünscht (separators=(',', ':'))
-        output_js += json.dumps(
-            markers_obj["markers"], indent=4
-        )  # Oder indent=None für kompakter
-        output_js += "\n};"
+        updated_content = (
+            content[:insert_pos] + new_marker_entry + "\n" + content[insert_pos:]
+        )  # Füge Marker + Zeilenumbruch ein
 
+        # Schreibe den gesamten geänderten Inhalt zurück
         with open(marker_file_path, "w", encoding="utf-8") as f:
-            f.write(output_js)
+            f.write(updated_content)
+
         logging.info(f"Marker erfolgreich zu {map_name} hinzugefügt.")
         return True, "Marker added successfully."
 
@@ -252,6 +268,52 @@ def check_secret(handler):
         # Sende generische Fehlermeldung
         handler._send_json({"error": "Unauthorized"}, status=401)
         return False
+
+
+def get_player_count_safely():
+    """Fragt die Spielerzahl via RCON ('list' Befehl) ab und verwendet einen Cache."""
+    # print("RCON-Cache: ", player_status_cache["data"])
+    now = time.time()
+    cache_duration = PLAYER_COUNT_CACHE_DURATION
+
+    with player_status_cache["lock"]:
+        if player_status_cache["data"] and (
+            now - player_status_cache["last_update"] < cache_duration
+        ):
+            return player_status_cache["data"]
+
+        logging.info(f"Connecting to RCON for player count: {RCON_HOST}:{RCON_PORT}")
+        try:
+            # Verwende 'with' für automatisches Verbinden/Trennen
+            with MCRcon(RCON_HOST, RCON_PASSWORD, port=RCON_PORT) as mcr:
+                resp = mcr.command("list")  # Sendet 'list' Befehl
+            # print(f"RCON 'list' response: {resp.strip()}")
+
+            # Parse die Antwort mit Regex
+            match = re.search(r"There are (\d+) of a max of \d+ players online:", resp)
+            if match:
+                online_players = int(match.group(1))
+                data = {"online": online_players}
+                logging.info(f"Spielerzahl (RCON) erhalten: {data['online']}")
+            else:
+                logging.warning(f"Konnte Spielerzahl nicht aus RCON parsen: {resp}")
+                raise ValueError("Could not parse player count from RCON response")
+
+            # Cache aktualisieren
+            player_status_cache["data"] = data
+            player_status_cache["last_update"] = now
+            return data
+
+        except (
+            Exception
+        ) as e:  # Fängt MCRconException, Connection-Fehler, Regex-Fehler etc. ab
+            logging.warning(
+                f"Fehler bei RCON-Abfrage an {RCON_HOST}:{RCON_PORT}: {type(e).__name__} - {e}"
+            )
+            error_data = {"error": "Server offline or RCON issue"}
+            player_status_cache["data"] = error_data
+            player_status_cache["last_update"] = now
+            return error_data
 
 
 # --- Request Handler Klasse ---
@@ -322,9 +384,13 @@ class MyHandler(BaseHTTPRequestHandler):
                 self._send_json({"last_updated": "Not generated yet"})
             return
 
-        # elif path_only == "/get_player_count": # Falls benötigt
-        #    ...
-        #    return
+        elif path_only == "/get_player_count":
+            status_data = get_player_count_safely()
+            if "error" in status_data:
+                self._send_json(status_data, status=200)
+            else:
+                self._send_json(status_data)
+            return
 
         else:
             self._send_json({"error": "Not Found"}, status=404)
@@ -366,11 +432,9 @@ class MyHandler(BaseHTTPRequestHandler):
                 return
             success, messages = run_unmined(map_name)
             if success:
-                self._send_json({"message": messages[0]})  # Nur erste Nachricht
+                self._send_json({"message": messages})
             else:
-                self._send_json(
-                    {"error": messages[0]}, status=500
-                )  # Nur erste Nachricht
+                self._send_json({"error": messages}, status=500)
 
         elif path_only == "/add_marker":
             map_name = data.get("map", "world")

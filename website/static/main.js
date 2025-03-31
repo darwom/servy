@@ -1,6 +1,6 @@
 const mapFrame = document.getElementById('mapFrame');
 const timestampElement = document.getElementById('timestamp');
-// const playerCountElement = document.getElementById('playerCount'); // Falls wieder aktiviert
+const playerCountElement = document.getElementById('playerCount');
 const buttons = document.querySelectorAll('.map-button');
 const markerForm = document.getElementById('markerForm');
 const markerButton = document.getElementById('marker');
@@ -37,7 +37,37 @@ window.addEventListener('message', (event) => {
     }
   }
 });
-// ------------------------------------
+
+// --- Spieleranzahl aktualisieren ---
+const updatePlayerCount = () => {
+  if (!playerCountElement) return;
+
+  fetch('/get_player_count')
+    .then((response) => (response.ok ? response.json() : Promise.reject('Network error')))
+    .then((data) => {
+      if (data.error) {
+        playerCountElement.textContent = 'Server offline';
+        playerCountElement.style.color = '#FF8080';
+      } else if (data.online !== undefined) {
+        const count = data.online;
+        // Zeige "X Player online" (oder "1 Player" wenn nur einer)
+        playerCountElement.textContent = `${count} Player${count !== 1 ? 's' : ''} online`;
+        playerCountElement.style.color = '#FFF'; // Farbe zurücksetzen
+      } else {
+        // Sollte nicht passieren, aber sicher ist sicher
+        playerCountElement.textContent = 'Error';
+        playerCountElement.style.color = '#FF8080';
+      }
+    })
+    .catch((error) => {
+      console.error('Error fetching player count:', error);
+      playerCountElement.textContent = 'Server offline';
+      playerCountElement.style.color = '#FF8080';
+    });
+};
+
+updatePlayerCount();
+//setInterval(updatePlayerCount, 30000); // 30 Sekunden Intervall
 
 // --- Hilfsfunktion für API Fehler ---
 function handleApiError(error, action) {
@@ -52,11 +82,11 @@ const updateTimestamp = (map) => {
   fetch(`/get_file_date?map=${map}`)
     .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
     .then((data) => {
-      timestampElement.textContent = data.last_updated ? `Last updated: ${data.last_updated}` : `Last updated: Error`;
+      timestampElement.textContent = data.last_updated ? `Map updated: ${data.last_updated}` : `Map updated: Error`;
     })
     .catch((err) => {
       console.error('Timestamp fetch error:', err);
-      timestampElement.textContent = `Last updated: Network error`;
+      timestampElement.textContent = `Map updated: Network error`;
     });
 };
 
