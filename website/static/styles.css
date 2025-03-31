@@ -6,6 +6,8 @@ body {
   height: 100vh;
   background: #191919;
   color: white;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
 }
 header {
   display: flex;
@@ -20,11 +22,8 @@ header div {
   display: flex;
   align-items: center;
 }
-.content-hidden {
-  visibility: hidden;
-}
 .content-visible {
-  visibility: visible;
+  opacity: 1;
 }
 button {
   background: #464646;
@@ -106,31 +105,75 @@ h3 {
   flex-direction: row;
   align-items: center;
 }
-.note {
-  font-size: 0.8em;
-  margin-top: 10px;
-}
 span {
   font-size: 14px;
   color: #999;
   text-align: center;
 }
-@media (max-width: 890px) {
+.mobile-logo-toggle {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+@media (max-width: 840px) {
   header {
     flex-direction: column;
+    align-items: stretch;
   }
-  header div {
+  header > div:first-of-type {
+    justify-content: left;
     width: 100%;
-    justify-content: center;
   }
-  .markerInputs {
-    flex-direction: column;
-    align-items: start;
+  .mobile-logo-toggle {
+    display: inline-block;
+    width: 38px;
   }
-  #markerForm {
-    align-items: start;
+  .desktop-logo {
+    display: none;
+  }
+  #playerCount,
+  #timestamp,
+  #reloadButton,
+  #marker {
+    width: calc(50% - 5px);
   }
   #markerForm.visible {
-    max-height: 324px;
+    max-height: 200px;
+  }
+  #headerSecondary {
+    max-height: 0;
+    overflow: hidden;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: -10px;
+    border-top: none;
+    transition: max-height 0.3s ease-out, padding 0.3s ease-out, margin 0.3s ease-out, border 0.3s ease-out, opacity 0.3s ease-out;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+  }
+  #headerSecondary.visible {
+    max-height: 100px;
+    margin-top: 0;
+    opacity: 1;
+    padding-top: 20px;
+  }
+  .markerInputs {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .markerInputs input,
+  .markerInputs button {
+    width: 45vw;
+    margin: 0;
+    box-sizing: border-box;
   }
 }

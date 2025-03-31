@@ -53,7 +53,13 @@
   <body>
     <header>
       <div>
-        <div class="logo"></div>
+        <button
+          id="mobileHeaderToggle"
+          class="mobile-logo-toggle"
+        >
+          <div class="logo"></div>
+        </button>
+        <div class="logo desktop-logo"></div>
         <button
           class="map-button active"
           data-map="world"
@@ -73,7 +79,7 @@
           End
         </button>
       </div>
-      <div>
+      <div id="headerSecondary">
         <span id="playerCount">Loading...</span>
         <span id="timestamp">Map updated: Loading...</span>
         <button id="reloadButton">Update Map</button>
@@ -105,7 +111,6 @@
         <button id="addMarkerButton">Add Marker</button>
       </div>
       <span>Press CTRL+C over map for coordinates. Removing markers requires manual action!</span>
-      <p class="note">Note: Update Map and Add Marker require a password.</p>
     </div>
     <div id="mapContainer">
       <iframe

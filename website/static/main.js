@@ -1,3 +1,4 @@
+// --- Base DOM Elements ---
 const mapFrame = document.getElementById('mapFrame');
 const timestampElement = document.getElementById('timestamp');
 const playerCountElement = document.getElementById('playerCount');
@@ -9,105 +10,188 @@ const markerZInput = document.getElementById('markerZ');
 const markerTextInput = document.getElementById('markerText');
 const addMarkerButton = document.getElementById('addMarkerButton');
 const reloadButton = document.getElementById('reloadButton');
+const mobileHeaderToggle = document.getElementById('mobileHeaderToggle');
+const headerSecondary = document.getElementById('headerSecondary');
 
-// --- Koordinate aus Iframe holen ---
-if (mapFrame) {
+/* ==========================================================================
+   Initialization on DOM Ready
+   ========================================================================== */
+document.addEventListener('DOMContentLoaded', () => {
+  // --- Mobile Header Toggle ---
+  // Toggles visibility of the secondary header section on mobile viewports.
+  if (mobileHeaderToggle && headerSecondary) {
+    mobileHeaderToggle.addEventListener('click', () => {
+      headerSecondary.classList.toggle('visible');
+    });
+  } else {
+    if (!mobileHeaderToggle) console.warn('Mobile header toggle element (#mobileHeaderToggle) not found.');
+    if (!headerSecondary) console.warn('Secondary header element (#headerSecondary) not found.');
+  }
+
+  // --- Coordinate Handling via Iframe Communication ---
+  setupCoordinateListener();
+  // --- Player Count Update ---
+  setupPlayerCountUpdater();
+  // --- Map Tab Button Logic ---
+  setupMapTabs();
+  // --- Map Update (Reload) Button ---
+  setupReloadButton();
+  // --- Marker Panel Toggle ---
+  setupMarkerPanelToggle();
+  // --- Add Marker Button ---
+  setupAddMarkerButton();
+  // --- Initial State ---
+  const initialMap = document.querySelector('.map-button.active')?.getAttribute('data-map') || 'world';
+  updateTimestamp(initialMap); // Load timestamp for the default map
+  // Fade-in body content after load
+  document.body.classList.add('content-visible');
+}); // End DOMContentLoaded
+
+/* ==========================================================================
+   Helper Functions & Event Listener Setups
+   ========================================================================== */
+
+/**
+ * Listens for keyboard events (Ctrl+C) and messages from the map iframe
+ * to fetch and populate coordinates in the marker form.
+ */
+function setupCoordinateListener() {
+  if (!mapFrame) return;
+
+  // Listen for Ctrl+C outside of inputs to request coordinates
   window.addEventListener('keydown', (event) => {
-    if (document.activeElement !== mapFrame && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+    const isInputElement = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+    if (document.activeElement !== mapFrame && !isInputElement) {
       if (event.ctrlKey && (event.key === 'c' || event.key === 'C')) {
         event.preventDefault();
         try {
-          // Sende Anfrage an Iframe - Verwende sicheren Origin statt '*'
-          const targetOrigin = mapFrame.contentWindow.location.origin; // oder '/' wenn immer same-origin
+          const targetOrigin = window.location.origin; // Assume same-origin iframe
           mapFrame.contentWindow.postMessage({ type: 'requestCoordinates' }, targetOrigin);
         } catch (e) {
-          console.error('Error sending message to iframe:', e);
+          console.error('Error posting message to iframe:', e);
         }
       }
     }
   });
-}
-window.addEventListener('message', (event) => {
-  // Wichtig: Prüfe den Ursprung der Nachricht zur Sicherheit
-  if (mapFrame && event.source === mapFrame.contentWindow && event.origin === window.location.origin) {
-    const messageData = event.data;
-    if (messageData && messageData.type === 'coordinates') {
-      if (markerXInput) markerXInput.value = messageData.coords.x ?? '';
-      if (markerZInput) markerZInput.value = messageData.coords.z ?? '';
-    }
-  }
-});
 
-// --- Spieleranzahl aktualisieren ---
-const updatePlayerCount = () => {
+  // Listen for coordinate messages back from the iframe
+  window.addEventListener('message', (event) => {
+    if (event.source === mapFrame.contentWindow && event.origin === window.location.origin) {
+      const { data } = event;
+      if (data && data.type === 'coordinates') {
+        if (markerXInput) markerXInput.value = data.coords.x ?? '';
+        if (markerZInput) markerZInput.value = data.coords.z ?? '';
+      }
+    }
+  });
+}
+
+/**
+ * Sets up fetching and displaying the current player count.
+ */
+function setupPlayerCountUpdater() {
   if (!playerCountElement) return;
 
-  fetch('/get_player_count')
-    .then((response) => (response.ok ? response.json() : Promise.reject('Network error')))
-    .then((data) => {
-      if (data.error) {
+  const update = () => {
+    fetch('/get_player_count')
+      .then((response) => (response.ok ? response.json() : Promise.reject(`HTTP ${response.status}`)))
+      .then((data) => {
+        if (data.error) {
+          playerCountElement.textContent = 'Server offline';
+          playerCountElement.style.color = '#FF8080';
+        } else if (data.online !== undefined) {
+          const count = data.online;
+          playerCountElement.textContent = `${count} Player${count !== 1 ? 's' : ''} online`;
+          playerCountElement.style.color = ''; // Reset color
+        } else {
+          playerCountElement.textContent = 'Invalid Data';
+          playerCountElement.style.color = '#FFCC00';
+        }
+      })
+      .catch((error) => {
+        console.error('Player count fetch error:', error);
         playerCountElement.textContent = 'Server offline';
         playerCountElement.style.color = '#FF8080';
-      } else if (data.online !== undefined) {
-        const count = data.online;
-        // Zeige "X Player online" (oder "1 Player" wenn nur einer)
-        playerCountElement.textContent = `${count} Player${count !== 1 ? 's' : ''} online`;
-        playerCountElement.style.color = '#FFF'; // Farbe zurücksetzen
-      } else {
-        // Sollte nicht passieren, aber sicher ist sicher
-        playerCountElement.textContent = 'Error';
-        playerCountElement.style.color = '#FF8080';
-      }
-    })
-    .catch((error) => {
-      console.error('Error fetching player count:', error);
-      playerCountElement.textContent = 'Server offline';
-      playerCountElement.style.color = '#FF8080';
-    });
-};
+      });
+  };
 
-updatePlayerCount();
-//setInterval(updatePlayerCount, 30000); // 30 Sekunden Intervall
+  update(); // Initial fetch
+  // setInterval(update, 30000); // Optional: Periodic refresh
+}
 
-// --- Hilfsfunktion für API Fehler ---
+/**
+ * Handles API errors by logging and showing an alert.
+ * @param {Error} error - The error object.
+ * @param {string} action - Description of the action that failed (e.g., 'update map').
+ */
 function handleApiError(error, action) {
   console.error(`${action} error:`, error);
-  // Zeige spezifische Meldung für 401, sonst generisch
-  const message = error.message && error.message.includes('password') ? 'Incorrect password.' : `Failed to ${action}. Please try again later.`;
+  let message = `Failed to ${action}. Please try again later.`;
+  if (error && error.message) {
+    if (error.message.includes('password') || error.message.includes('Unauthorized') || error.message.includes('401')) {
+      message = 'Incorrect password.';
+    } else if (error.message.startsWith('HTTP')) {
+      message = `Failed to ${action}. Server error: ${error.message}`;
+    } else {
+      message = error.message; // Use server-provided error if available
+    }
+  }
   alert(message);
 }
 
-// --- Zeitstempel aktualisieren ---
-const updateTimestamp = (map) => {
+/**
+ * Fetches and displays the last updated timestamp for a given map.
+ * @param {string} map - The map identifier (e.g., 'world', 'nether').
+ */
+function updateTimestamp(map) {
+  if (!timestampElement) return;
+  timestampElement.textContent = `Map updated: Loading...`;
+
   fetch(`/get_file_date?map=${map}`)
     .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
     .then((data) => {
-      timestampElement.textContent = data.last_updated ? `Map updated: ${data.last_updated}` : `Map updated: Error`;
+      timestampElement.textContent = data.last_updated ? `Map updated: ${data.last_updated}` : `Map updated: Date unavailable`;
     })
     .catch((err) => {
       console.error('Timestamp fetch error:', err);
-      timestampElement.textContent = `Map updated: Network error`;
+      timestampElement.textContent = `Map updated: Error loading`;
     });
-};
+}
 
-// --- Map-Buttons ---
-buttons.forEach((button) => {
-  button.addEventListener('click', () => {
-    buttons.forEach((btn) => btn.classList.remove('active'));
-    button.classList.add('active');
-    const map = button.getAttribute('data-map');
-    if (mapFrame) mapFrame.src = `/maps/${map}/index.html`; // Nur Pfad ändern
-    updateTimestamp(map);
+/**
+ * Sets up event listeners for the map selection tabs.
+ */
+function setupMapTabs() {
+  if (!mapFrame || buttons.length === 0) return;
+
+  buttons.forEach((button) => {
+    button.addEventListener('click', () => {
+      // Update active state
+      buttons.forEach((btn) => btn.classList.remove('active'));
+      button.classList.add('active');
+
+      // Change map source and update timestamp
+      const map = button.getAttribute('data-map');
+      mapFrame.src = `/maps/${map}/index.html`;
+      updateTimestamp(map);
+    });
   });
-});
+}
 
-// --- Karte aktualisieren ---
-if (reloadButton) {
+/**
+ * Sets up the event listener for the "Update Map" (reload) button.
+ * Requires password prompt and handles API interaction.
+ */
+function setupReloadButton() {
+  if (!reloadButton) return;
+
   reloadButton.addEventListener('click', () => {
     const activeMap = document.querySelector('.map-button.active')?.getAttribute('data-map') || 'world';
-    const userSecret = prompt('Please enter the password to update the map:');
+    const userSecret = prompt('Password to update map:');
+
+    if (userSecret === null) return; // Cancelled
     if (!userSecret) {
-      alert('Map update cancelled.');
+      alert('Password cannot be empty.');
       return;
     }
 
@@ -120,18 +204,19 @@ if (reloadButton) {
       body: JSON.stringify({ map: activeMap }),
     })
       .then((response) => {
-        if (response.status === 401) throw new Error('Incorrect password provided.');
-        if (!response.ok)
+        if (response.status === 401) throw new Error('Incorrect password.');
+        if (!response.ok) {
           return response
             .json()
             .then((err) => Promise.reject(new Error(err.error || `HTTP ${response.status}`)))
             .catch(() => Promise.reject(new Error(`HTTP ${response.status}`)));
+        }
         return response.json();
       })
       .then((data) => {
-        alert(data.message || 'Map update started successfully.');
+        alert(data.message || 'Map update started.');
         updateTimestamp(activeMap);
-        if (mapFrame) mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Neu laden
+        if (mapFrame) mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Force reload
       })
       .catch((error) => handleApiError(error, 'update map'))
       .finally(() => {
@@ -141,39 +226,54 @@ if (reloadButton) {
   });
 }
 
-// --- Marker Panel ---
-if (markerButton && markerForm) {
+/**
+ * Sets up the toggle functionality for the marker input panel.
+ */
+function setupMarkerPanelToggle() {
+  if (!markerButton || !markerForm) return;
+
   markerButton.addEventListener('click', () => {
     markerForm.classList.toggle('visible');
-    markerButton.classList.toggle('active');
+    markerButton.classList.toggle('active', markerForm.classList.contains('visible'));
   });
 }
 
-// --- Marker hinzufügen ---
-if (addMarkerButton) {
+/**
+ * Sets up the event listener for the "Add Marker" button.
+ * Performs validation, requires password, and handles API interaction.
+ */
+function setupAddMarkerButton() {
+  if (!addMarkerButton || !markerXInput || !markerZInput || !markerTextInput) {
+    console.warn("One or more elements required for 'Add Marker' functionality are missing.");
+    return;
+  }
+
   addMarkerButton.addEventListener('click', () => {
-    const x = markerXInput.value;
-    const z = markerZInput.value;
-    const text = markerTextInput.value.trim(); // Leerzeichen entfernen
+    const xVal = markerXInput.value;
+    const zVal = markerZInput.value;
+    const textVal = markerTextInput.value.trim();
     const activeMap = document.querySelector('.map-button.active')?.getAttribute('data-map') || 'world';
 
-    if (!x || !z || !text) {
-      alert('Please fill all marker fields.');
+    if (!xVal || !zVal || !textVal) {
+      alert('Please provide X, Z coordinates and marker text.');
       return;
     }
-    const markerData = { x: parseInt(x, 10), z: parseInt(z, 10), text: text };
-    if (isNaN(markerData.x) || isNaN(markerData.z)) {
-      alert('Coordinates must be numbers.');
+    const x = parseInt(xVal, 10);
+    const z = parseInt(zVal, 10);
+    if (isNaN(x) || isNaN(z)) {
+      alert('Coordinates (X, Z) must be numbers.');
       return;
     }
-    if (text.length > 32) {
-      alert('Marker text cannot exceed 32 characters.');
+    if (textVal.length > 32) {
+      alert('Marker text must be 32 characters or less.');
       return;
     }
+    const markerData = { x, z, text: textVal };
 
-    const userSecret = prompt('Please enter the password to add a marker:');
+    const userSecret = prompt('Password to add marker:');
+    if (userSecret === null) return; // Cancelled
     if (!userSecret) {
-      alert('Add marker cancelled.');
+      alert('Password cannot be empty.');
       return;
     }
 
@@ -186,12 +286,13 @@ if (addMarkerButton) {
       body: JSON.stringify({ map: activeMap, marker: markerData }),
     })
       .then((response) => {
-        if (response.status === 401) throw new Error('Incorrect password provided.');
-        if (!response.ok)
+        if (response.status === 401) throw new Error('Incorrect password.');
+        if (!response.ok) {
           return response
             .json()
             .then((err) => Promise.reject(new Error(err.error || `HTTP ${response.status}`)))
             .catch(() => Promise.reject(new Error(`HTTP ${response.status}`)));
+        }
         return response.json();
       })
       .then((data) => {
@@ -199,7 +300,10 @@ if (addMarkerButton) {
         markerXInput.value = '';
         markerZInput.value = '';
         markerTextInput.value = '';
-        if (mapFrame) mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Neu laden
+        if (markerForm.classList.contains('visible')) {
+          markerButton.click();
+        }
+        if (mapFrame) mapFrame.src = `/maps/${activeMap}/index.html?t=${Date.now()}`; // Force reload
       })
       .catch((error) => handleApiError(error, 'add marker'))
       .finally(() => {
@@ -208,10 +312,3 @@ if (addMarkerButton) {
       });
   });
 }
-
-// --- Initialer Ladevorgang ---
-updateTimestamp('world');
-window.addEventListener('load', () => {
-  document.body.classList.remove('content-hidden');
-  document.body.classList.add('content-visible');
-});
