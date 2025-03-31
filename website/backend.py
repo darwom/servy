@@ -9,6 +9,7 @@ from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 import logging
 from mcrcon import MCRcon
+from dotenv import load_dotenv
 
 # Basisverzeichnis des Skripts
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,17 +28,27 @@ MAP_OUTPUT_BASE_PATH = os.environ.get("MAP_OUTPUT_PATH", os.path.join(BASE_DIR, 
 BACKEND_HOST = "127.0.0.1"  # Nur lokal lauschen
 BACKEND_PORT = 8000
 
+# --- WICHTIGE SICHERHEITSPRÜFUNGEN ---
+load_dotenv()
 # Passwort
-ACTION_SECRET = os.environ.get("MAP_ACTION_SECRET", "xxx")
+ACTION_SECRET = os.environ.get("MAP_ACTION_SECRET")
+if not ACTION_SECRET:  # Prüft auf None oder leeren String ''
+    logging.critical("FEHLER: Umgebungsvariable 'MAP_ACTION_SECRET' ist nicht gesetzt!")
+    exit(1)  # Beendet das Skript sofort
 
-# Logging Konfiguration
+# RCON Passwort
+RCON_PASSWORD = os.environ.get("RCON_PASSWORD")
+if not RCON_PASSWORD:
+    logging.critical("FEHLER: Umgebungsvariable 'RCON_PASSWORD' ist nicht gesetzt!")
+    exit(1)
+
+# --- Restliche Konfiguration ---
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 RCON_HOST = "localhost"
 RCON_PORT = 25575
-RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "FALLBACK_PASSWORT")
 if RCON_PASSWORD == "FALLBACK_PASSWORT":
     logging.critical("Keine RCON_PASSWORD Umgebungsvariable gesetzt!")
     exit(1)
