@@ -110,6 +110,10 @@ span {
   color: #999;
   text-align: center;
 }
+#timestamp {
+  width: 26ch;
+  text-align: left;
+}
 .mobile-logo-toggle {
   display: none;
   background: none;
@@ -141,6 +145,12 @@ span {
   #marker {
     width: calc(50% - 5px);
   }
+  #timestamp {
+    text-align: right;
+  }
+  #playerCount {
+    text-align: left;
+  }
   #markerForm.visible {
     max-height: 200px;
   }
@@ -163,7 +173,7 @@ span {
     max-height: 100px;
     margin-top: 0;
     opacity: 1;
-    padding-top: 20px;
+    padding-top: 10px;
   }
   .markerInputs {
     display: grid;
@@ -172,7 +182,7 @@ span {
   }
   .markerInputs input,
   .markerInputs button {
-    width: 45vw;
+    width: calc(50vw - 15px);
     margin: 0;
     box-sizing: border-box;
   }
