@@ -27,7 +27,7 @@ MAP_OUTPUT_BASE_PATH = os.environ.get("MAP_OUTPUT_PATH", os.path.join(BASE_DIR, 
 BACKEND_HOST = "127.0.0.1"  # Nur lokal lauschen
 BACKEND_PORT = 8000
 
-# Sicherheit (Lade Secret aus Umgebungsvariable, mit sicherem Default nur für lokale Entwicklung)
+# Passwort
 ACTION_SECRET = os.environ.get("MAP_ACTION_SECRET", "xxx")
 
 # Logging Konfiguration
@@ -37,7 +37,6 @@ logging.basicConfig(
 
 RCON_HOST = "localhost"
 RCON_PORT = 25575
-# WICHTIG: Passwort aus Umgebungsvariable laden!
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "FALLBACK_PASSWORT")
 if RCON_PASSWORD == "FALLBACK_PASSWORT":
     logging.critical("Keine RCON_PASSWORD Umgebungsvariable gesetzt!")
@@ -55,11 +54,9 @@ map_update_timer = {
     "last_update": 0,
     "lock": threading.Lock(),
 }
-# --------------------
+
 
 # --- Hilfsfunktionen ---
-
-
 def run_unmined(map_name):
     """Führt den unmined-cli Prozess sicher aus."""
     dimension_mapping = {"world": "overworld", "nether": "nether", "end": "end"}
@@ -109,9 +106,7 @@ def run_unmined(map_name):
             text=True,
             encoding="utf-8",
             errors="replace",
-            creationflags=(
-                subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            ),  # Versteckt Konsolenfenster unter Windows
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
         )
         stdout, stderr = process.communicate(timeout=600)  # Timeout nach 10 Minuten
 
@@ -133,7 +128,6 @@ def run_unmined(map_name):
                 False,
                 "Map update failed. Check server logs.",
             )  # Generische Fehlermeldung
-
     except subprocess.TimeoutExpired:
         logging.error(f"Unmined-Prozess Timeout für {map_name}.")
         process.kill()  # Prozess beenden
@@ -150,7 +144,7 @@ def run_unmined(map_name):
 
 
 def add_marker_safely(map_name, marker_data):
-    """Fügt einen Marker sicher zur unmined.custom.markers.js hinzu."""
+    """Fügt einen Marker sicher zur custom.markers.js hinzu."""
     # --- Validierungen
     if map_name not in ["world", "nether", "end"]:
         return False, "Invalid map name."
@@ -170,7 +164,6 @@ def add_marker_safely(map_name, marker_data):
         return False, "Marker file not found on server."
 
     # --- Neuen Marker vorbereiten ---
-    # Text sicher für JS-String escapen mit json.dumps
     sanitized_text_json = json.dumps(text)
 
     # Erzeuge das neue Marker-Objekt als String
@@ -185,7 +178,6 @@ def add_marker_safely(map_name, marker_data):
 
     # --- Datei lesen, Marker einfügen, Datei schreiben ---
     try:
-        # Lese den gesamten Inhalt
         with open(marker_file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
@@ -208,7 +200,6 @@ def add_marker_safely(map_name, marker_data):
 
         logging.info(f"Marker erfolgreich zu {map_name} hinzugefügt.")
         return True, "Marker added successfully."
-
     except Exception as e:
         logging.exception(f"Fehler beim Hinzufügen des Markers zu {map_name}")
         return False, "An unexpected error occurred while adding marker."
@@ -225,11 +216,10 @@ def modify_unmined_html(map_name):
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Zuverlässigere Prüfung, ob das Kernstück des Scripts schon da ist
         if "requestCoordinates" in content and "sendCoordinates" in content:
             return  # Bereits vorhanden
 
-        # Minimalisiertes Script für Produktion
+        # Script für Koordinatenabfrage
         coordinate_script = """<script>function sendCoordinates(){const d=document.querySelector('.ol-mouse-position');if(d){const t=d.textContent.trim(),m=t.match(/(-?\\d+)\\s*,\\s*(-?\\d+)/);if(m&&m.length===3){const x=parseInt(m[1],10),z=parseInt(m[2],10);if(!isNaN(x)&&!isNaN(z))window.parent.postMessage({type:'coordinates',coords:{x:x,z:z}},'*')}}}window.addEventListener('message',(e)=>{if(e.data&&e.data.type==='requestCoordinates')sendCoordinates()});document.addEventListener('keydown',(e)=>{if(e.ctrlKey&&(e.key==='c'||e.key==='C')){e.preventDefault();sendCoordinates()}});</script>"""
 
         if "</body>" in content:
@@ -241,7 +231,6 @@ def modify_unmined_html(map_name):
             logging.info(f"Koordinaten-Script zu {file_path} hinzugefügt/aktualisiert.")
         else:
             logging.warning(f"Konnte </body> Tag in {file_path} nicht finden.")
-
     except Exception as e:
         logging.exception(f"Fehler beim Modifizieren von {file_path}")
 
@@ -249,8 +238,7 @@ def modify_unmined_html(map_name):
 def patch_unmined_js_minimal(map_name):
     """Fügt den Zoom-Patch zur unmined.js hinzu, damit die Marker ab Zoom x verschwinden."""
     js_file_path = os.path.join(MAP_OUTPUT_BASE_PATH, map_name, "unmined.js")
-    js_patch_code = (
-        """
+    js_patch_code = """
 // --- START MARKER ZOOM PATCH ---
 (function() {
     if (typeof Unmined === 'undefined' || !Unmined.prototype || !Unmined.prototype.updateMarkersLayer) {
@@ -298,44 +286,41 @@ def patch_unmined_js_minimal(map_name):
     };
 })();
 """
-        + "\n"
-    )
 
     if not os.path.exists(js_file_path):
         logging.warning(f"Skipping patch: {js_file_path} not found.")
         return
 
     try:
-        # Öffne im r+ Modus (Lesen und Schreiben), um die Datei effizient zu prüfen und zu ändern
-        with open(js_file_path, "r+", encoding="utf-8") as f:
-            f.seek(0, os.SEEK_END)
-            f.write("\n\n" + js_patch_code)
-        logging.info(f"Marker-Zoom-Patch added to {js_file_path}.")
+        with open(js_file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            if "// --- START MARKER ZOOM PATCH ---" in content:
+                logging.info(f"Marker-Zoom-Patch bereits in {js_file_path} vorhanden.")
+                return
 
+        # Wenn Patch nicht gefunden wurde, anhängen:
+        with open(js_file_path, "a", encoding="utf-8") as f:  # 'a' für Append
+            f.write("\n\n" + js_patch_code)
+        logging.info(f"Marker-Zoom-Patch zu {js_file_path} hinzugefügt.")
     except Exception as e:
-        logging.exception(f"Error patching {js_file_path}")
+        logging.exception(f"Fehler beim Patchen von {js_file_path}")
 
 
 def check_secret(handler):
     """Prüft das Secret im 'X-Action-Secret' Header."""
     submitted_secret = handler.headers.get("X-Action-Secret")
-    if (
-        submitted_secret and submitted_secret == ACTION_SECRET
-    ):  # Prüfe auch ob Secret nicht None ist
+    if submitted_secret and submitted_secret == ACTION_SECRET:
         return True
     else:
-        # Logge fehlgeschlagenen Versuch serverseitig
         logging.warning(
             f"Ungültiger Secret-Versuch auf {handler.path} von {handler.client_address[0]}."
         )
-        # Sende generische Fehlermeldung
         handler._send_json({"error": "Unauthorized"}, status=401)
         return False
 
 
 def get_player_count_safely():
     """Fragt die Spielerzahl via RCON ('list' Befehl) ab und verwendet einen Cache."""
-    # print("RCON-Cache: ", player_status_cache["data"])
     now = time.time()
     cache_duration = PLAYER_COUNT_CACHE_DURATION
 
@@ -350,7 +335,6 @@ def get_player_count_safely():
             # Verwende 'with' für automatisches Verbinden/Trennen
             with MCRcon(RCON_HOST, RCON_PASSWORD, port=RCON_PORT) as mcr:
                 resp = mcr.command("list")  # Sendet 'list' Befehl
-            # print(f"RCON 'list' response: {resp.strip()}")
 
             # Parse die Antwort mit Regex
             match = re.search(r"There are (\d+) of a max of \d+ players online:", resp)
@@ -366,7 +350,6 @@ def get_player_count_safely():
             player_status_cache["data"] = data
             player_status_cache["last_update"] = now
             return data
-
         except (
             Exception
         ) as e:  # Fängt MCRconException, Connection-Fehler, Regex-Fehler etc. ab
@@ -381,7 +364,7 @@ def get_player_count_safely():
 
 # --- Request Handler Klasse ---
 class MyHandler(BaseHTTPRequestHandler):
-    """Handles API requests for map updates and information."""
+    """HTTP-Request-Handler für den Backend-Server."""
 
     # Setze Server-Header auf etwas Unauffälliges
     server_version = "MapService/1.0"
@@ -418,7 +401,7 @@ class MyHandler(BaseHTTPRequestHandler):
             logging.error(f"Konnte JSON-Antwort nicht senden: {e}")
 
     def do_GET(self):
-        """Handles GET requests (read-only information)."""
+        """Handhabt GET-Anfragen (z.B. Statusabfragen)."""
         parsed_path = urlparse(self.path)
         path_only = parsed_path.path
 
@@ -459,7 +442,7 @@ class MyHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not Found"}, status=404)
 
     def do_POST(self):
-        """Handles POST requests (actions like update map, add marker)."""
+        """Handhabt POST-Anfragen (z.B. Map-Updates, Marker hinzufügen)."""
         parsed_path = urlparse(self.path)
         path_only = parsed_path.path
 
