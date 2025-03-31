@@ -49,6 +49,12 @@ player_status_cache = {
     "last_update": 0,
     "lock": threading.Lock(),
 }
+
+# Füge global einen Timer für Map-Updates hinzu
+map_update_timer = {
+    "last_update": 0,
+    "lock": threading.Lock(),
+}
 # --------------------
 
 # --- Hilfsfunktionen ---
@@ -143,23 +149,9 @@ def run_unmined(map_name):
         return False, "An unexpected error occurred during map update."
 
 
-# backend.py (ersetze die Funktion add_marker_safely komplett hiermit)
-
-import re  # Importiere Regex Modul am Anfang der Datei
-import json  # Für sicheres String-Escaping
-
-
-# backend.py (ersetze add_marker_safely hiermit)
-
-import json  # Für json.dumps
-import logging
-import os
-import html  # Optional, wenn json.dumps nicht reicht
-
-
 def add_marker_safely(map_name, marker_data):
     """Fügt einen Marker sicher zur unmined.custom.markers.js hinzu."""
-    # --- Validierungen (wie vorher) ---
+    # --- Validierungen
     if map_name not in ["world", "nether", "end"]:
         return False, "Invalid map name."
     if not all(k in marker_data for k in ("x", "z", "text")):
@@ -501,6 +493,20 @@ class MyHandler(BaseHTTPRequestHandler):
             if map_name not in ["world", "nether", "end"]:
                 self._send_json({"error": "Bad Request"}, status=400)
                 return
+
+            # Throttling: Nur 1 Mapupdate pro Minute erlauben
+            current_time = time.time()
+            with map_update_timer["lock"]:
+                if current_time - map_update_timer["last_update"] < 60:
+                    self._send_json(
+                        {
+                            "error": "Map update already triggered recently. Please wait a minute."
+                        },
+                        status=429,
+                    )
+                    return
+                map_update_timer["last_update"] = current_time
+
             success, messages = run_unmined(map_name)
             if success:
                 self._send_json({"message": messages})
@@ -523,10 +529,7 @@ class MyHandler(BaseHTTPRequestHandler):
             if success:
                 self._send_json({"message": message})
             else:
-                self._send_json(
-                    {"error": message}, status=500
-                )  # Generische Fehlermeldung
-
+                self._send_json({"error": message}, status=500)
         else:
             self._send_json({"error": "Not Found"}, status=404)
 
