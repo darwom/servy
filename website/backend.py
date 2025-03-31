@@ -112,6 +112,7 @@ def run_unmined(map_name):
         if process.returncode == 0:
             logging.info(f"Unmined erfolgreich beendet für {map_name}.")
             modify_unmined_html(map_name)  # Script hinzufügen/prüfen
+            patch_unmined_js_minimal(map_name)  # Patch hinzufügen/prüfen
             return True, "Map updated successfully."
         else:
             error_message = f"Unmined-Prozess fehlgeschlagen (Code: {process.returncode}) für {map_name}."
@@ -251,6 +252,76 @@ def modify_unmined_html(map_name):
 
     except Exception as e:
         logging.exception(f"Fehler beim Modifizieren von {file_path}")
+
+
+def patch_unmined_js_minimal(map_name):
+    """Fügt den Zoom-Patch zur unmined.js hinzu, damit die Marker ab Zoom x verschwinden."""
+    js_file_path = os.path.join(MAP_OUTPUT_BASE_PATH, map_name, "unmined.js")
+    js_patch_code = (
+        """
+// --- START MARKER ZOOM PATCH ---
+(function() {
+    if (typeof Unmined === 'undefined' || !Unmined.prototype || !Unmined.prototype.updateMarkersLayer) {
+        console.warn("Unmined or prototype method not ready for patch application.");
+        return;
+    }
+    const originalUpdateMarkersLayer = Unmined.prototype.updateMarkersLayer;
+    if (typeof Unmined.prototype._zoomListenerAddedForMarkers === 'undefined') {
+        Unmined.prototype._zoomListenerAddedForMarkers = false;
+    }
+    Unmined.prototype.updateMarkersLayer = function () {
+        if (this.olMap && !this._zoomListenerAddedForMarkers) {
+            try {
+                const view = this.olMap.getView();
+                if (view) {
+                    view.on('change:resolution', () => {
+                        if (typeof this.updateMarkersLayer === 'function') {
+                           this.updateMarkersLayer();
+                        }
+                    });
+                    this._zoomListenerAddedForMarkers = true;
+                }
+            } catch (e) {
+                console.error("Error adding zoom listener:", e);
+                this._zoomListenerAddedForMarkers = true; // Mark as attempted
+            }
+        }
+        if (originalUpdateMarkersLayer) {
+           originalUpdateMarkersLayer.call(this);
+        }
+        if (this.markersLayer && this.olMap && this.olMap.getView) {
+            const view = this.olMap.getView();
+            if (!view) return;
+            const isVisibleByUser = this.markersLayer.getVisible();
+            if (isVisibleByUser) {
+                const currentZoom = view.getZoom();
+                const minZoom = 4; 
+                if (currentZoom !== undefined && currentZoom <= minZoom) {
+                    this.markersLayer.setVisible(false);
+                } else if (currentZoom !== undefined && currentZoom > minZoom) {
+                     this.markersLayer.setVisible(true);
+                }
+            }
+        }
+    };
+})();
+"""
+        + "\n"
+    )
+
+    if not os.path.exists(js_file_path):
+        logging.warning(f"Skipping patch: {js_file_path} not found.")
+        return
+
+    try:
+        # Öffne im r+ Modus (Lesen und Schreiben), um die Datei effizient zu prüfen und zu ändern
+        with open(js_file_path, "r+", encoding="utf-8") as f:
+            f.seek(0, os.SEEK_END)
+            f.write("\n\n" + js_patch_code)
+        logging.info(f"Marker-Zoom-Patch added to {js_file_path}.")
+
+    except Exception as e:
+        logging.exception(f"Error patching {js_file_path}")
 
 
 def check_secret(handler):
