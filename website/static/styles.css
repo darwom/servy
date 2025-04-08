@@ -4,7 +4,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #191919;
+  background: #202020;
   color: white;
   opacity: 0;
   transition: opacity 1s ease-in-out;
@@ -82,7 +82,7 @@ header button.active {
 #markerForm {
   display: flex;
   padding: 0px;
-  background: #191919;
+  background: #202020;
   overflow: hidden;
   max-height: 0;
   transition: max-height 0.3s ease-out, padding 0.3s ease-out;

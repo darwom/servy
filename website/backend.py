@@ -2,7 +2,7 @@ import os
 import json
 import subprocess
 import re
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -17,12 +17,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Pfade (Pfade auf dem Zielsystem prüfen!)
 UNMINED_CLI_PATH = os.environ.get(
     "UNMINED_CLI_PATH",
-    r"C:\Program Files\unmined\unmined-cli_0.19.47-dev_win-64bit\unmined-cli.exe",
+    r"/home/servi/Websites/unmined-cli_0.19.48-dev_linux-x64/unmined-cli"
 )
 MINECRAFT_WORLD_PATH = os.environ.get(
-    "MC_WORLD_PATH", r"C:\Users\dNine\AppData\Roaming\.minecraft\saves\boyzTest"
+    "MC_WORLD_PATH", r"/home/servi/minecraft/VanillaServer/world"
 )
 MAP_OUTPUT_BASE_PATH = os.environ.get("MAP_OUTPUT_PATH", os.path.join(BASE_DIR, "maps"))
+MAPSETTINGS_PATH = "/home/servi/Websites/unmined-cli_0.19.43/templates/default2.json"
+
 
 # Backend Server
 BACKEND_HOST = "127.0.0.1"  # Nur lokal lauschen
@@ -93,11 +95,12 @@ def run_unmined(map_name):
         "render",
         f"--world={MINECRAFT_WORLD_PATH}",
         f"--dimension={dimension}",
-        "--shadows=3d",
-        "--background=#191919",
+        "--shadows=3do",
+        "--background=#202020",
         "--zoomout=4",
         "--zoomin=2",
         f"--output={output_path}",
+        f"--mapsettings={MAPSETTINGS_PATH}",
     ]
     center_coords = {
         "world": ("--centerx=550", "--centerz=750"),
@@ -183,7 +186,7 @@ def add_marker_safely(map_name, marker_data):
                 x: {marker_data['x']},
                 z: {marker_data['z']},
                 text: {sanitized_text_json},
-                textColor: "#191919",
+                textColor: "#202020",
                 font:"bold 20px Arial,Calibri,sans serif"
             }},"""  # Komma immer anhängen
 
@@ -494,7 +497,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 if current_time - map_update_timer["last_update"] < 60:
                     self._send_json(
                         {
-                            "error": "Map update already triggered recently. Please wait a minute."
+                            "error": "Map update already triggered recently. Please wait."
                         },
                         status=429,
                     )
@@ -532,7 +535,7 @@ class MyHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     server_address = (BACKEND_HOST, BACKEND_PORT)
     # Verwende ThreadingHTTPServer für bessere Performance bei gleichzeitigen Anfragen
-    httpd = ThreadingHTTPServer(server_address, MyHandler)
+    httpd = HTTPServer(server_address, MyHandler)
     httpd.daemon_threads = True  # Erlaubt sauberes Beenden mit Strg+C
 
     logging.info(f"Python Backend lauscht auf http://{BACKEND_HOST}:{BACKEND_PORT}")
